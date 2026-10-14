@@ -48,6 +48,10 @@ local function RegisterAnimation()
     hook.Remove("Think", "MXW_SJZ_Keybind")
     hook.Remove("PlayerButtonDown", "MXW_SJZ_Keybind_Button")
     concommand.Remove("mxw_sjz_use")
+    -- The original addon has a separate music/tablet shortcut on K.
+    hook.Remove("Think", "MXW_SJZ_MusicKey")
+    hook.Remove("PlayerButtonDown", "MXW_SJZ_MusicButton")
+    concommand.Remove("mxw_sjz_music")
     if not hg or not hg.ZManipAnims then return end
     hg.ZManipAnims.fox_phone_decoder = {
         mdl = "models/sjz/v_sjz_decipherer.mdl", seq = "turnon", playTime = F.Warmup,
@@ -122,13 +126,13 @@ hook.Add("radialOptions", "FoxPhoneHack", function()
             if active or CurTime() < ply:GetNWFloat("FoxHackCooldown", 0) then return end
             net.Start("FoxPhoneHackStart") net.SendToServer()
         end,
-        active and "Phone Hack (ACTIVE)" or (remaining > 0 and ("Phone Hack (" .. remaining .. "s)") or "Phone Hack")
+        active and "Hack Tablet (ACTIVE)" or (remaining > 0 and ("Hack Tablet (" .. remaining .. "s)") or "Hack Tablet")
     }
 end)
 net.Receive("FoxPhoneHackTargets", function()
     local updated = {}
     for i = 1, net.ReadUInt(6) do
-        updated[i] = {id = net.ReadUInt(16), pos = net.ReadVector(), calling = net.ReadBool(), disabled = net.ReadFloat()}
+        updated[i] = {id = net.ReadUInt(16), pos = net.ReadVector(), trap = net.ReadBool(), calling = net.ReadBool(), disabled = net.ReadFloat()}
     end
     targets = updated
     F.Targets = targets
@@ -137,13 +141,14 @@ net.Receive("FoxPhoneHackStatus", function()
     status = net.ReadString() statusUntil = CurTime() + 3
     surface.PlaySound("buttons/blip1.wav")
 end)
-local function SelectedPhone(ply)
+local function SelectedTarget(ply)
     if not F.CanAct(ply) or CurTime() >= ply:GetNWFloat("FoxHackEnd", 0) then return end
     local best, bestDot = nil, F.AimDot
     for _, target in ipairs(targets) do
         local delta = target.pos - ply:EyePos()
         local dot = ply:GetAimVector():Dot(delta:GetNormalized())
-        if dot > bestDot and ply:GetPos():DistToSqr(target.pos) <= F.Range * F.Range and target.disabled <= CurTime() then
+        local range = target.trap and F.TrapRange or F.Range
+        if dot > bestDot and ply:GetPos():DistToSqr(target.pos) <= range * range and target.disabled <= CurTime() then
             best, bestDot = target, dot
         end
     end
@@ -152,9 +157,9 @@ end
 hook.Add("PlayerBindPress", "FoxPhoneHackRemoteShock", function(ply, bind, pressed)
     if not pressed or bind ~= "+use" then return end
     if vgui.CursorVisible() or gui.IsGameUIVisible() then return end
-    local target = SelectedPhone(ply)
+    local target = SelectedTarget(ply)
     if not target then return end
-    if CurTime() < ply:GetNWFloat("FoxShockCooldown", 0) then return true end
+    if not target.trap and CurTime() < ply:GetNWFloat("FoxShockCooldown", 0) then return true end
     net.Start("FoxPhoneHackShock") net.WriteUInt(target.id, 16) net.SendToServer()
     return true
 end)
@@ -166,7 +171,7 @@ hook.Add("HUDPaint", "FoxPhoneHackMarkers", function()
     end
     local ends = ply:GetNWFloat("FoxHackEnd", 0)
     if ends <= CurTime() then return end
-    local selected = SelectedPhone(ply)
+    local selected = SelectedTarget(ply)
     for _, target in ipairs(targets) do
         local screen = target.pos:ToScreen()
         if screen.visible then
@@ -177,14 +182,16 @@ hook.Add("HUDPaint", "FoxPhoneHackMarkers", function()
             surface.DrawLine(screen.x + size, screen.y, screen.x, screen.y + size)
             surface.DrawLine(screen.x, screen.y + size, screen.x - size, screen.y)
             surface.DrawLine(screen.x - size, screen.y, screen.x, screen.y - size)
-            local label = target.disabled > CurTime() and "DISABLED" or (target.calling and "CALLING" or "PHONE")
+            local label = target.trap and (target.disabled > CurTime() and "TRAP UNAVAILABLE" or "TRAP")
+                or (target.disabled > CurTime() and "DISABLED" or (target.calling and "CALLING" or "PHONE"))
             draw.SimpleText(label, "DermaDefaultBold", screen.x, screen.y + size + 4, color, TEXT_ALIGN_CENTER)
         end
     end
     if selected then
         local cooldown = math.ceil(ply:GetNWFloat("FoxShockCooldown", 0) - CurTime())
         local key = string.upper(input.LookupBinding("+use") or "E")
-        draw.SimpleText(cooldown > 0 and ("SHOCK RECHARGING: " .. cooldown .. "s") or ("[" .. key .. "] SHOCK PHONE"),
+        draw.SimpleText(selected.trap and ("[" .. key .. "] ACTIVATE TRAP")
+            or (cooldown > 0 and ("SHOCK RECHARGING: " .. cooldown .. "s") or ("[" .. key .. "] SHOCK PHONE")),
             "DermaDefaultBold", ScrW() * 0.5, ScrH() * 0.60, Color(255, 80, 80), TEXT_ALIGN_CENTER)
     end
 end)

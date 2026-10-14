@@ -9,6 +9,7 @@ MODE.GuiltDisabled = true
 MODE.ForBigMaps = false
 MODE.Chance = 0.05
 MODE.shouldfreeze = true
+MODE.IntroDuration = 9.6
 MODE.ROUND_TIME = 510
 
 -- VIC-mode ZBattle Point Editor spawns. VIC + Chud Defense are paired

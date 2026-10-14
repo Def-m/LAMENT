@@ -71,7 +71,7 @@ local CITIZEN_COLOR = Color(255, 60, 60)
 local TASK_COLOR = Color(255, 210, 40)
 
 local START_SOUND_PATH = "zcity_president/president_start.mp3"
-local PRESIDENT_INTRO_DURATION = 9.6
+local PRESIDENT_INTRO_DURATION = MODE.IntroDuration or 9.6
 
 local taskData = nil
 local introRoleInfo = nil

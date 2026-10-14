@@ -53,7 +53,9 @@ if SERVER then
         local state = ply.FCDroneState
         local locked = state and state.ang or ply:EyeAngles()
         cmd:SetViewAngles(Angle(locked.p, locked.y, 0))
-        cmd:ClearMovement()
+        cmd:SetForwardMove(0)
+        cmd:SetSideMove(0)
+        cmd:SetUpMove(0)
     end)
 
     hook.Add("KeyPress", "FreakCityDrone_Controls", function(ply, key)
@@ -136,7 +138,9 @@ local function sendCameraAim(drone, force)
     net.SendToServer()
 end
 
-hook.Add("InputMouseApply", "FreakCityDrone_FreeCamera", function(cmd, x, y)
+-- Also called directly by Z-City's mouse handler before it consumes the event.
+-- Whichever handler runs first returns true, so each mouse delta is applied once.
+function FreakCityDrone.ApplyMouseInput(cmd, x, y)
     local drone = updateFreeLookDrone()
     if not IsValid(drone) or drone:GetDriver() ~= LocalPlayer() then return end
 
@@ -144,8 +148,12 @@ hook.Add("InputMouseApply", "FreakCityDrone_FreeCamera", function(cmd, x, y)
     freeLook.yaw = math.NormalizeAngle(freeLook.yaw - x * scale)
     freeLook.pitch = math.Clamp(freeLook.pitch + y * scale, -85, 85)
     cmd:SetViewAngles(Angle(freeLook.bodyPitch, freeLook.bodyYaw, 0))
-    sendCameraAim(drone, true)
+    sendCameraAim(drone, false)
     return true
+end
+
+hook.Add("InputMouseApply", "FreakCityDrone_FreeCamera", function(cmd, x, y)
+    return FreakCityDrone.ApplyMouseInput(cmd, x, y)
 end)
 
 hook.Add("CreateMove", "FreakCityDrone_SyncFlightDirection", function(cmd)
@@ -252,7 +260,9 @@ end)
 
 hook.Add("StartCommand", "FreakCityDrone_BlockPlayerMovement", function(ply, cmd)
     local drone = FreakCityDrone.GetActive(ply)
-    if IsValid(drone) then cmd:ClearMovement() end
+    if IsValid(drone) then cmd:SetForwardMove(0)
+        cmd:SetSideMove(0)
+        cmd:SetUpMove(0) end
 end)
 
 hook.Add("ContextMenuOpen", "FreakCityDrone_BlockContextMenu", function()

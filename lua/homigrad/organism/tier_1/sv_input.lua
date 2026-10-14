@@ -1599,7 +1599,7 @@ local function velocityDamage(ent, data)
 	local traceResult = GetTraceDamage(ent, data.HitPos, -(data.OurOldVelocity - data.TheirOldVelocity))
 	
 	if not bone then
-		bone = tr.PhysicsBone
+		bone = traceResult and traceResult.PhysicsBone or 0
 	end
 
 	if IsValid(att) and att:IsPlayer() and att.organism and att.organism.fear and att.organism.fear < 0 then

@@ -7,6 +7,8 @@ local BULLDOZER_MODEL = "models/mark2580/payday2/pd2_bulldozer_player.mdl"
 
 function CLASS.On(self, data)
     if CLIENT then return end
+    local setupToken = {}
+    self.hgJuggernautSetupToken = setupToken
 
     -- Fat Chud has an exclusive custom voice pack. Stop any normal human
     -- phrase/pain scream that was already playing before the class switch.
@@ -68,7 +70,8 @@ function CLASS.On(self, data)
     end
 
     timer.Simple(0.1, function()
-        if not IsValid(self) then return end
+        if not IsValid(self) or self.PlayerClassName ~= "juggernaut"
+            or self.hgJuggernautSetupToken ~= setupToken or not self:Alive() then return end
 
         if contextAssigned then
             -- Re-assert after delayed appearance/playerclass hooks finish.
@@ -130,6 +133,7 @@ function CLASS.On(self, data)
 end
 
 function CLASS.Off(self)
+    self.hgJuggernautSetupToken = nil
     if CLIENT then return end
     self.ContextJuggernaut = nil
     if self.organism then
@@ -139,4 +143,19 @@ function CLASS.Off(self)
         self.organism.bleedingResistance = nil
         self.organism.painResistance = nil
     end
+end
+
+-- Late appearance/spawn callbacks must not leave a round Juggernaut in a civilian model.
+-- Only repair the model; never re-run class setup or reset health/organs/loadout.
+if SERVER then
+    timer.Create("ChudmorseJuggernautModel", 0.5, 0, function()
+        for _, ply in ipairs(player.GetAll()) do
+            if IsValid(ply) and ply:Alive() and ply.PlayerClassName == "juggernaut"
+                and ply.ContextJuggernaut == false and not IsValid(ply.FakeRagdoll)
+                and ply:GetModel() ~= BULLDOZER_MODEL then
+                ply:SetModel(BULLDOZER_MODEL)
+                ply:SetSubMaterial()
+            end
+        end
+    end)
 end

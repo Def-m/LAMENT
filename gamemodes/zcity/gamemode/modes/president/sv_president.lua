@@ -216,44 +216,9 @@ local function GivePooledPrimary(ply, pool, reserveClips)
     return primary
 end
 
--- The stock SWAT player class hard-forces a male SWAT model. That breaks
--- female appearances in VIC mode, so female Chud Protectors stay on the
--- normal appearance class while male Protectors keep the existing SWAT look.
-local function IsFemaleChudProtector(ply)
-    if not IsValid(ply) then return false end
-
-    local appearance = ply.CurAppearance or ply.CachedAppearance
-    local modelName = istable(appearance) and appearance.AModel or nil
-
-    if hg and hg.Appearance then
-        local femaleModels = hg.Appearance.PlayerModels and hg.Appearance.PlayerModels[2]
-        if femaleModels and modelName and femaleModels[modelName] then
-            return true
-        end
-
-        local femaleByModel = hg.Appearance.FuckYouModels and hg.Appearance.FuckYouModels[2]
-        if femaleByModel and femaleByModel[ply:GetModel()] then
-            return true
-        end
-    end
-
-    if isfunction(ThatPlyIsFemale) then
-        return ThatPlyIsFemale(ply)
-    end
-
-    return isstring(modelName) and string.StartWith(string.lower(modelName), "female")
-end
-
+-- Every Chud Protector uses the SWAT class, regardless of cached appearance.
 local function GiveChudProtectorLoadout(ply)
-    if IsFemaleChudProtector(ply) then
-        -- Default class preserves the player's selected female model/clothes/name.
-        ply:SetPlayerClass("default")
-        if isfunction(ApplyAppearance) then
-            ApplyAppearance(ply, nil, nil, nil, true)
-        end
-    else
-        ply:SetPlayerClass("swat")
-    end
+    ply:SetPlayerClass("swat")
     GiveSling(ply)
     GiveFlashlightInventory(ply)
 
@@ -1276,6 +1241,7 @@ function MODE:CanLaunch()
 end
 
 function MODE:RoundStart()
+    self.ragdollUnlockAt = CurTime() + (self.IntroDuration or 9.6)
     self.roundDone = false
     self.roundTimedOut = false
     self.presidentTaskWon = false
@@ -1396,6 +1362,7 @@ function MODE:RoundStart()
 end
 
 function MODE:Intermission()
+    self.ragdollUnlockAt = nil
     game.CleanUpMap()
 
     self.roundDone = false

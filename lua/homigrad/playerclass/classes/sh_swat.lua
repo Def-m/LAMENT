@@ -2,22 +2,34 @@ local CLASS = player.RegClass("swat")
 
 function CLASS.Off(self)
     if CLIENT then return end
+    self.ChudmorseSWATSetupToken = nil
 end
 
-local models = {
-    "models/css_seb_swat/css_swat.mdl",
-}
+local SWAT_MODEL = "models/css_seb_swat/css_swat.mdl"
+
+local function ApplySWATModel(ply, force)
+    if not IsValid(ply) or not ply:Alive() or ply.PlayerClassName ~= "swat" then return end
+    if IsValid(ply.FakeRagdoll) then return end
+    if not force and ply:GetModel() == SWAT_MODEL then return end
+
+    ply:SetModel(SWAT_MODEL)
+    ply:SetSubMaterial()
+    ply:SetSkin(0)
+    ply:SetBodyGroups("00000000000")
+end
 
 function CLASS.On(self)
     if CLIENT then return end
+    local setupToken = {}
+    self.ChudmorseSWATSetupToken = setupToken
     ApplyAppearance(self,nil,nil,nil,true)
     self:SetPlayerColor(Color(10,10,100):ToVector())
-    self:SetModel(models[math.random(#models)])
-    self:SetSubMaterial()
-    timer.Simple(0,function()
-        self:SetBodyGroups("00000000000")
+    ApplySWATModel(self, true)
+    timer.Simple(0, function()
+        if not IsValid(self) or self.ChudmorseSWATSetupToken ~= setupToken then return end
+        ApplySWATModel(self, true)
     end)
-    local Appearance = self.CurAppearance or hg.Appearance.GetRandomAppearance()
+    local Appearance = table.Copy(self.CurAppearance or hg.Appearance.GetRandomAppearance())
     Appearance.AAttachments = ""
     Appearance.AColthes = ""
     self:SetNetVar("Accessories", "")
@@ -65,3 +77,13 @@ hook.Add("HG_PlayerFootstep", "swat_footsteps", function(ply, pos, foot, sound, 
 		end
 	end
 end)
+
+-- Appearance/spawn callbacks may arrive after class setup on dedicated servers.
+-- Repair only a model mismatch; never rerun class setup or reset the loadout.
+if SERVER then
+    timer.Create("ChudmorseSWATModel", 0.5, 0, function()
+        for _, ply in ipairs(player.GetAll()) do
+            ApplySWATModel(ply, false)
+        end
+    end)
+end

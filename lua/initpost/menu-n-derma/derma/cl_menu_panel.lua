@@ -780,13 +780,15 @@ function PANEL:CreateAppearancePreview()
         local clothes = appearance.AClothes or {}
         local mats = ent:GetMaterials()
         for k, v in SortedPairs(modelData.submatSlots or {}) do
-            local slot = 1
+            if k ~= "main" and k ~= "pants" and k ~= "boots" then continue end
+            local slot
             for i = 1, #mats do
                 if mats[i] == v then
                     slot = i - 1
                     break
                 end
             end
+            if slot == nil then continue end
             local sexID = modelData.sex and 2 or 1
             local clothMat = hg.Appearance.Clothes[sexID] and hg.Appearance.Clothes[sexID][clothes[k]]
             ent:SetSubMaterial(slot, clothMat or (hg.Appearance.Clothes[sexID] and hg.Appearance.Clothes[sexID].normal) or nil)

@@ -105,6 +105,11 @@ function ENT:SetDriver(ply)
     local user = self:GetDriver()
 
     if IsValid(ply) then
+        if not ply:IsPlayer() or not self.Enabled or self.FCExploded or self.FCWaterFailure
+            or self:GetNWBool("Kamikaze_DeadBattery", false) then return false end
+        if IsValid(ply.FakeRagdoll) or ply:InVehicle() or (ply.organism and ply.organism.otrub) then return false end
+        local activeDrone = ply:GetNWEntity("kamikaze_")
+        if IsValid(activeDrone) and activeDrone ~= self then return false end
         if CurTime() < (self.wait or 0) then return false end
         if IsValid(user) or not ply:Alive() then return false end
         if IsValid(self.FCDisposableOwner) and self.FCDisposableOwner ~= ply then return false end
@@ -158,6 +163,15 @@ function ENT:SetDriver(ply)
 
     self:SetNWEntity("user", NULL)
     user:SetNWEntity("kamikaze_", NULL)
+    self:SetNWBool("Kamikaze_Flashlight", false)
+    -- Death/ragdoll code owns the body's state once the pilot is incapacitated.
+    if not user:Alive() or IsValid(user.FakeRagdoll) then
+        user:SetViewEntity(user)
+        self.EntryPos = nil
+        self.FCCameraAim = nil
+        user.FCDroneState = nil
+        return true
+    end
     local oldViewEntity = IsValid(state.viewEntity) and state.viewEntity or user
     user:SetViewEntity(oldViewEntity)
     user:SetParent(NULL)
@@ -390,7 +404,8 @@ function ENT:_Think()
 	end
 
 	local user = self:GetDriver()
-	if user:IsValid() and not user:Alive() then self:SetDriver(NULL) end
+	if SERVER and IsValid(user) and (not user:Alive() or IsValid(user.FakeRagdoll)
+        or (user.organism and user.organism.otrub)) then self:SetDriver(NULL) end
 
 	if not self.Enabled then
 		local ef = EffectData()

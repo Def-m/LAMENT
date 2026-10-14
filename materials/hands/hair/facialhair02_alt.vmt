@@ -1,0 +1,10 @@
+"VertexlitGeneric"
+{
+	"$basetexture" "models/mosi/fallout4/character/hair/facialhair02"
+	"$bumpmap" "models/mosi/fallout4/character/hair/facialhair02_n"
+	
+	$alphatest 1
+	$alphatestreference .33
+
+	"$nocull" 1
+}

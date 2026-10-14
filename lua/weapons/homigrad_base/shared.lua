@@ -339,6 +339,19 @@ function SWEP:IsSprinting()
 	end
 end
 
+-- [JUDGE PORT] Run-and-gun: pistols held in the "gangsta" posture (7 / 8) may fire while sprinting.
+function SWEP:CanSprintFire()
+	local owner = self:GetOwner()
+	return self:IsPistolHoldType() and IsValid(owner) and (owner.posture == 7 or owner.posture == 8)
+end
+
+-- [JUDGE PORT] How hard the gun shakes while sprint-firing (stronger ammo / lighter gun = more shake).
+function SWEP:GetSprintFireShake()
+	local force = (hg.ammotypeshuy[self.Primary.Ammo] and hg.ammotypeshuy[self.Primary.Ammo].BulletSettings and hg.ammotypeshuy[self.Primary.Ammo].BulletSettings.Force) or self.Primary.Force or 0
+	local weight = self.weight or 1
+	return math.Clamp((1 + force / 40) / (weight * 1.5), 0.4, 1.6)
+end
+
 function SWEP:IsLocal()
 	return CLIENT and self:GetOwner() == LocalPlayer()
 end
@@ -496,6 +509,8 @@ function SWEP:Shoot(override)
 	local owner = self:GetOwner()
 	if owner:IsNPC() then self.drawBullet = true end
 
+	-- [JUDGE PORT] SPRINT-FIRE GATE: only CanSprintFire() guns may shoot while sprinting. Delete this one line to let every gun shoot while sprinting.
+	if !override and IsValid(owner) and owner:IsPlayer() and self:IsSprinting() and !self:CanSprintFire() then return false end
 	if !override and !self:CanPrimaryAttack() then return false end
 	if !override and !self:CanUse(true) then return false end
 	if CLIENT and owner != LocalPlayer() and !override then return false end
@@ -1275,7 +1290,7 @@ function SWEP:CoreStep()
 
 	--	if SERVER and self.UseCustomWorldModel then self:WorldModel_Transform() end
 
-	if SERVER and not owner:IsNPC() and self != actwep then
+	if SERVER and not owner:IsNPC() and self != actwep and not hg.KeepWeaponInRagdoll(owner) then
 		--local inv = owner:GetNetVar("Inventory",{})
 
 		if not (inv["Weapons"] and inv["Weapons"]["hg_sling"] and not self:IsPistolHoldType()) then
@@ -1285,21 +1300,8 @@ function SWEP:CoreStep()
 	end
 
 	if SERVER and not owner:IsNPC() and owner.organism and (not owner.organism.canmove or ((owner.organism.stun - CurTime()) > 0) or (owner.organism.larm == 1 and owner.organism.rarm == 1)) and IsValid(actwep) and self == actwep then
-		self:RemoveFake()
-		
-		if hg_slings:GetBool() and (zb.CROUND and zb.CROUND == "hmcd" or gamemod == "sandbox") then
-			local inv = owner:GetNetVar("Inventory",{})
-			if not (inv["Weapons"] and inv["Weapons"]["hg_sling"] and not self:IsPistolHoldType()) then
-				hg.drop(owner, self)
-				hook.Run("PlayerDropWeapon", owner)
-			else
-				hook.Run("PlayerDropWeapon", owner)
-                                local hands = hg.GetHandsWeapon and hg.GetHandsWeapon(owner) or owner:GetWeapon("weapon_hands_sh")
-                                if IsValid(hands) then
-                                        owner:SetActiveWeapon(hands)
-                                end
-			end
-		end
+        -- Keep inventory and the selected weapon while incapacitated.
+        -- The early return still prevents firing until control is recovered.
 
 		return
 	end
@@ -1806,7 +1808,7 @@ function SWEP:GetAdditionalValues()
 
 	local posture = ((animpos < 0.2 and self:IsSprinting()) or animpos > (self:IsPistolHoldType() and 0.5 or 0.2)) and (self:IsPistolHoldType() and 3 or 4) or ply.posture
 
-	local func = hg.postureFunctions2[(self:IsSprinting() or huya) and (self:GetButtstockAttack() - CurTime() < -1) and ((ply.posture == 3 and 3) or (ply.posture == 3 and 3) or (self:IsPistolHoldType() and 3 or 3)) or ply.posture] or funcNil
+	local func = hg.postureFunctions2[((self:IsSprinting() and !self:CanSprintFire()) or huya) and (self:GetButtstockAttack() - CurTime() < -1) and ((ply.posture == 3 and 3) or (ply.posture == 3 and 3) or (self:IsPistolHoldType() and 3 or 3)) or ply.posture] or funcNil
 	func = ply:GetNWFloat("InLegKick", 0) > CurTime() and hg.postureFunctions2["legkicking"] or func
 	if not self.inspect then
 		func(self, ply, huya)
@@ -1918,7 +1920,11 @@ function SWEP:GetAdditionalValues()
 	--ply.oldposture = ply.posture
 	if self:IsSprinting() then
 		--ply.posture = 1
-		walk = walk * 2
+		if self:CanSprintFire() then
+			walk = walk * self:GetSprintFireShake()
+		else
+			walk = walk * 2
+		end
 	end
 
 	--print(self:IsSprinting())
@@ -1980,7 +1986,7 @@ function SWEP:GetAdditionalValues()
 	--self.AdditionalPosPreLerp[2] = self.AdditionalPosPreLerp[2] + (ply.Crouching and isCrouching(ply) and -1 or 0)
 
 	local suiciding = false--ply.suiciding
-	local huypitch = ((ply.suiciding and !IsValid(ply.FakeRagdoll)) or huya or (self:IsSprinting() or ((ply.posture == 4 or ply.posture == 3) and not self:IsZoom())))
+	local huypitch = ((ply.suiciding and !IsValid(ply.FakeRagdoll)) or huya or ((self:IsSprinting() and !self:CanSprintFire()) or ((ply.posture == 4 or ply.posture == 3) and not self:IsZoom())))
 
 	self.pitch = Lerp(hg.lerpFrameTime(0.001,dtime), self.pitch, ply:GetNWFloat("InLegKick",0) > CurTime() and 0.5 or suiciding and 1 or huypitch and 0.65 or (self.reload and self.ReloadNoPitch) and 0.75 or 0)
 	

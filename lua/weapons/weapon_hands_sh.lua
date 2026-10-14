@@ -344,7 +344,7 @@ function SWEP:SetHandPos(noset)
 	if CLIENT and self.IsLocal and not self:IsLocal() and IsValid(ply) and ply.PlayerClassName == "headcrabzombie" and not IsValid(ply:GetNetVar("carryent")) then return end
 
 	if not IsValid(ply) or not IsValid(self.worldModel) then return end
-	if IsValid(ply) and (not ply.shouldTransmit or ply.NotSeen) then return end
+	if hg.IsHeldWeaponCulled(ply) then return end
 	-- ply:SetupBones()
 
 	local ent = self:GetNWEntity("carryent")

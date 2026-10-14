@@ -154,7 +154,7 @@ hook.Add("PlayerDropWeapon", "homigrad-inventory", function(ply)
 	if ply.organism and ishgweapon(wep) then ply.organism.postureGunfireWeapon = wep end
 
     timer.Simple(0.1,function()
-        if not IsValid(wep) then return end
+        if not IsValid(wep) or IsValid(wep:GetOwner()) or IsValid(wep:GetParent()) then return end
         if not IsValid(ply) then return end
         local ent = IsValid(ply:GetNWEntity("RagdollDeath")) and ply:GetNWEntity("RagdollDeath") or ply.FakeRagdoll
         if not IsValid(ent) then return end
@@ -170,20 +170,31 @@ hook.Add("PlayerDropWeapon", "homigrad-inventory", function(ply)
 
         local localpos,localang = LocalToWorld(wep.WorldPos and wep.WorldPos + Vector(3.5,0,0) or vector_origin,wep.WorldAng or angle_zero,handpos,handang)
         localang:RotateAroundAxis(localang:Forward(),180)
-        wep:SetPos(localpos)
-        wep:SetAngles(localang)
+        if wep.ismelee2 and hg.PlaceDroppedMelee then
+            local placed, moved = hg.PlaceDroppedMelee(wep, localpos, localang, ent, ply)
+            -- A buried hand would pull the weapon back through the floor if welded.
+            if not placed or moved then return end
+        else
+            wep:SetPos(localpos)
+            wep:SetAngles(localang)
+        end
         wep:SetVelocity(vector_origin)
         wep:SetCollisionGroup(COLLISION_GROUP_WEAPON)
 
+        if not bon then return end
         local physbone = ent:TranslateBoneToPhysBone(bon)
-        local physbonetorso = ent:TranslateBoneToPhysBone(ent:LookupBone("ValveBiped.Bip01_Spine2"))
+        if physbone < 0 then return end
+        local torsoBone = ent:LookupBone("ValveBiped.Bip01_Spine2")
+        local physbonetorso = torsoBone and ent:TranslateBoneToPhysBone(torsoBone) or 0
 
         local cons = constraint.Weld(wep, ent, 0, physbone, 600, true, false)
 		if ply.organism and ishgweapon(wep) then ply.organism.postureGunfireWeapon = wep end
 
         if math.random(1,10) <= 2 then
             timer.Simple(4, function()
+                if not IsValid(wep) or not IsValid(ent) or IsValid(wep:GetOwner()) then return end
                 timer.Simple(0, function()
+                    if not IsValid(wep) or not IsValid(ent) or IsValid(wep:GetOwner()) then return end
                     local cons2 = constraint.NoCollide(wep, ent, 0, 0)
                 end)
                 if IsValid(cons) then
@@ -381,6 +392,35 @@ local functions = {
     -- end,
 }
 
+-- Searching restrained players
+-- A conscious player normally can't be looted. They CAN be searched if they are
+--   * handcuffed
+--   * duct-taped (their ragdoll has an active tape bond)
+--   * paralyzed (broken spine, i.e. organism.canmove == false)
+local function isDuctTaped(ragdoll)
+    if not IsValid(ragdoll) or not istable(ragdoll.DuctTape) then return false end
+    for _, tbl in pairs(ragdoll.DuctTape) do
+        if istable(tbl) and IsValid(tbl[1]) then return true end
+    end
+    return false
+end
+
+-- returns "handcuffed" / "taped" / "paralyzed", or nil if the player isn't restrained
+function hg.GetRestraint(ply)
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    local org = ply.organism
+
+    if ply:GetNetVar("handcuffed", false) or (org and org.handcuffed) then return "handcuffed" end
+    if isDuctTaped(ply.FakeRagdoll) then return "taped" end
+    if org and org.canmove == false and not org.otrub then return "paralyzed" end
+end
+
+-- true if ply is a conscious, living player that can't be searched (not restrained)
+local function isAwakeAndFree(ply, ent)
+    return IsValid(ent) and ent:IsPlayer() and ent ~= ply and ent:Alive()
+        and ent.organism and not ent.organism.otrub and not hg.GetRestraint(ent)
+end
+
 util.AddNetworkString("ply_take_item")
 net.Receive("ply_take_item", function(len, ply)
     if (ply.cooldown_takeitem or 0) > CurTime() then return end
@@ -392,7 +432,8 @@ net.Receive("ply_take_item", function(len, ply)
     local ent = net.ReadEntity()
     
     if !IsValid(ent) or !IsValid(ply) then return end
-    if ent:IsPlayer() and not IsValid(ent.FakeRagdoll) then return end
+    if ent:IsPlayer() and not IsValid(ent.FakeRagdoll) and not ent:GetNetVar("handcuffed", false) then return end
+    if isAwakeAndFree(ply, ent) then return end
 
     if ent:GetPos():Distance(ply:GetPos()) > 125 then return end
     local func = functions[tblIndex]
@@ -408,7 +449,7 @@ local playerMeta = FindMetaTable("Player")
 function playerMeta:OpenInventory(ent)
     hook.Run("ZB_InventoryOpened",self,ent)
     if not IsValid(ent) then return end
-    if ent:IsPlayer() and not IsValid(ent.FakeRagdoll) then return end
+    if ent:IsPlayer() and not IsValid(ent.FakeRagdoll) and not ent:GetNetVar("handcuffed", false) then return end
     if ent:IsPlayer() then hg.RenewInv(ent) end
     if self:IsPlayer() then hg.RenewInv(self) end
     self.cooldown_takeitem = CurTime() + 0.5
@@ -453,8 +494,8 @@ hook.Add("Player Think", "loot-fellows",function(ply)
     if not trace then return end
     local ent = trace.Entity
     ent = IsValid(hg.RagdollOwner(ent)) and hg.RagdollOwner(ent) or ent
-		if IsValid(ent) and ent:IsPlayer() and ent ~= ply and ent:Alive() and ent.organism and not ent.organism.otrub then
-			if not ply.keypressed then ply:ChatPrint("You cant loot them, they are awake.") end
+		if isAwakeAndFree(ply, ent) then
+			if not ply.keypressed then ply:ChatPrint("You cant loot them, they are awake. You can only search someone who is handcuffed, taped or paralyzed.") end
 			ply.keypressed = true
 			return
 		end

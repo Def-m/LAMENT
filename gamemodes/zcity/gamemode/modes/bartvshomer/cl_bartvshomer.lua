@@ -30,8 +30,15 @@ local function Setup()
 		antialias = true
 	})
 
+	surface.CreateFont("ZB_BvHTimer", {
+		font = "Trebuchet MS",
+		size = ScreenScale(12),
+		weight = 800,
+		antialias = true
+	})
+
 	-- Homer health HUD (bottom right, visible to everyone all round).
-	local HOMER_MAX_HEALTH = 235
+	local HOMER_MAX_HEALTH = 135
 	local HURT_FACE_DURATION = 0.5 -- how long the hurt face shows after a hit
 
 	local homerCalmMat = Material("bartvshomer/homer_calm.png", "noclamp smooth")
@@ -90,6 +97,71 @@ local function Setup()
 		)
 	end
 
+	-- Round countdown, top center. The server sets BvH_RoundEnd when the
+	-- round actually starts (after the pre-round countdown) and clears it when
+	-- the round ends, so this only shows while the 7 minutes are running.
+	local function DrawRoundTimerHUD()
+		if not IsBartVsHomerRoundActive() then return end
+
+		local roundEnd = GetGlobalFloat("BvH_RoundEnd", 0)
+		if roundEnd <= 0 then return end
+
+		local remaining = math.max(roundEnd - CurTime(), 0)
+		local total = math.ceil(remaining)
+		local text = string.format("%d:%02d", math.floor(total / 60), total % 60)
+
+		local sw, sh = ScrW(), ScrH()
+
+		-- No background box -- just the text, with a thin outline so it stays
+		-- readable over any background.
+		draw.SimpleTextOutlined(
+			text,
+			"ZB_BvHTimer",
+			sw * 0.5,
+			sh * 0.02,
+			remaining <= 30 and Color(230, 70, 60) or color_white,
+			TEXT_ALIGN_CENTER,
+			TEXT_ALIGN_TOP,
+			1,
+			Color(0, 0, 0, 200)
+		)
+	end
+
+	-- Yellow highlight (visible through walls) on every other living player
+	-- who is far from you -- Barts see far-away Barts and Homer, Homer sees
+	-- far-away Barts. Nearby players are never highlighted. Tweak FAR_DISTANCE
+	-- (Source units) to change what counts as "far".
+	local FAR_DISTANCE = 1500
+	local FAR_HIGHLIGHT_COLOR = Color(255, 220, 0)
+
+	hook.Add("PreDrawHalos", "BvH_FarPlayerHighlight", function()
+		if not IsBartVsHomerRoundActive() then return end
+		if zb.ROUND_STATE ~= 1 then return end
+
+		local lply = LocalPlayer()
+		if not IsValid(lply) or not lply:Alive() then return end
+
+		local origin = lply:GetPos()
+		local farSqr = FAR_DISTANCE * FAR_DISTANCE
+		local targets = {}
+
+		for _, ply in player.Iterator() do
+			if ply == lply or not ply:Alive() then continue end
+			if ply:Team() == TEAM_SPECTATOR then continue end
+			if origin:DistToSqr(ply:GetPos()) < farSqr then continue end
+
+			-- The visible body, which is the ragdoll while someone is downed.
+			local body = (hg and hg.GetCurrentCharacter and hg.GetCurrentCharacter(ply)) or ply
+			if IsValid(body) then
+				targets[#targets + 1] = body
+			end
+		end
+
+		if #targets > 0 then
+			halo.Add(targets, FAR_HIGHLIGHT_COLOR, 2, 2, 2, true, true)
+		end
+	end)
+
 	local roleData = {
 		[0] = { -- Bart
 			line = "You're a Bart",
@@ -123,29 +195,17 @@ local function Setup()
 		woohoo = "bartvshomer/homer_woohoo.mp3"
 	}
 
-    local introMusic
-    local function StopIntroMusic()
-        if introMusic then introMusic:Stop() introMusic = nil end
-    end
-    hook.Add("Think", "BartVsHomerIntroCleanup", function()
-        if zb.CROUND ~= "bartvshomer" then StopIntroMusic() end
-    end)
-    hook.Add("ZB_EndRound", "BartVsHomerIntroCleanup", StopIntroMusic)
-
 	net.Receive("bartvshomer_sound", function()
 		local key = net.ReadString()
 		local path = BVH_SOUNDS[key]
-        if key == "round_start" then
-            StopIntroMusic()
-            introMusic = CreateSound(LocalPlayer(), path)
-            if introMusic then introMusic:PlayEx(1, 100) end
-        elseif path then
-            surface.PlaySound(path)
-        end
+		if path then
+			surface.PlaySound(path)
+		end
 	end)
 
 	function MODE:HUDPaint()
 		DrawHomerHealthHUD()
+		DrawRoundTimerHUD()
 
 		local elapsed = CurTime() - introStartTime
 		if elapsed < 0 or elapsed > INTRO_DURATION then return end
@@ -185,7 +245,6 @@ local function Setup()
 	end
 
 	function MODE:EndRound()
-        StopIntroMusic()
 		introStartTime = -math.huge
 	end
 

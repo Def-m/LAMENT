@@ -8,6 +8,8 @@ FoxPhoneHack = FoxPhoneHack or {}
 local F = FoxPhoneHack
 -- Balance settings: Source units and seconds.
 F.Range = 1600
+F.TrapRange = 4096
+F.TrapClass = "ttt_traitor_button"
 F.Warmup = 2
 F.Duration = 24
 F.ScanCooldown = 60
@@ -15,6 +17,7 @@ F.ShockCooldown = 10
 F.StunTime = 3
 F.AimDot = math.cos(math.rad(8))
 F.PhoneClass = "weapon_police_phone"
+F.RadioClass = "weapon_walkie_talkie"
 function F.IsFox(ply)
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return false end
     if not zb or zb.ROUND_STATE ~= 1 then return false end

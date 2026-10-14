@@ -11,6 +11,9 @@ end
 AddResources("models/sjz")
 AddResources("materials/sjz")
 AddResources("sound/sjz")
+AddResources("materials/vgui/ttt")
+resource.AddFile("materials/entities/activator_new.vmt")
+resource.AddFile("materials/entities/activator_new.vtf")
 local scans = {}
 -- Keep sound ownership across Lua reloads so an existing loop can still be stopped.
 F.ShockSounds = F.ShockSounds or {}
@@ -59,7 +62,7 @@ end
 function F.PhoneHolder(phone)
     local owner = phone:GetOwner()
     if not phone.FoxPhoneDropped and IsValid(owner) and owner:IsPlayer()
-        and owner:GetWeapon(F.PhoneClass) == phone then return owner end
+        and owner:GetWeapon(phone:GetClass()) == phone then return owner end
 end
 function F.PhonePosition(phone)
     local owner = F.PhoneHolder(phone)
@@ -73,32 +76,74 @@ function F.PhonePosition(phone)
     return phone:WorldSpaceCenter()
 end
 function F.ValidPhone(ply, phone)
-    return IsValid(phone) and phone:GetClass() == F.PhoneClass
-        and F.PhoneHolder(phone) ~= ply and not phone:GetSpent()
+    return IsValid(phone) and (phone:GetClass() == F.PhoneClass or phone:GetClass() == F.RadioClass)
+        and F.PhoneHolder(phone) ~= ply
+        and not (phone.GetSpent and phone:GetSpent())
+        and not (phone.IsRadioDestroyed and phone:IsRadioDestroyed())
         and not phone:GetNWBool("FoxPhoneDestroyed", false) and not phone.FoxPhoneDestroyed
         and ply:GetPos():DistToSqr(F.PhonePosition(phone)) <= F.Range * F.Range
+end
+function F.ValidTrap(ply, trap)
+    return IsValid(trap) and trap:GetClass() == F.TrapClass
+        and isfunction(trap.IsUsable) and isfunction(trap.GetDelay)
+        and ply:GetPos():DistToSqr(trap:GetPos()) <= F.TrapRange * F.TrapRange
+end
+local function TargetPosition(ent)
+    return ent:GetClass() == F.TrapClass and ent:GetPos() or F.PhonePosition(ent)
 end
 local function SendTargets(ply, state)
     local found = {}
     for _, phone in ipairs(ents.FindByClass(F.PhoneClass)) do
         if F.ValidPhone(ply, phone) then found[#found + 1] = phone end
     end
+    for _, radio in ipairs(ents.FindByClass(F.RadioClass)) do
+        if F.ValidPhone(ply, radio) then found[#found + 1] = radio end
+    end
+    for _, trap in ipairs(ents.FindByClass(F.TrapClass)) do
+        if F.ValidTrap(ply, trap) then found[#found + 1] = trap end
+    end
     table.sort(found, function(a, b)
-        return ply:GetPos():DistToSqr(F.PhonePosition(a)) < ply:GetPos():DistToSqr(F.PhonePosition(b))
+        return ply:GetPos():DistToSqr(TargetPosition(a)) < ply:GetPos():DistToSqr(TargetPosition(b))
     end)
     state.targets = {}
-    local count = math.min(#found, 32)
+    local count = math.min(#found, 63)
     net.Start("FoxPhoneHackTargets") net.WriteUInt(count, 6)
     for i = 1, count do
-        local phone = found[i]
-        state.targets[phone] = true
-        net.WriteUInt(phone:EntIndex(), 16)
-        net.WriteVector(F.PhonePosition(phone))
-        net.WriteBool(phone:GetCalling())
-        net.WriteFloat(phone:GetNWFloat("FoxPhoneDisabledUntil", 0))
+        local target = found[i]
+        local trap = target:GetClass() == F.TrapClass
+        state.targets[target] = true
+        net.WriteUInt(target:EntIndex(), 16)
+        net.WriteVector(TargetPosition(target))
+        net.WriteBool(trap)
+        net.WriteBool(not trap and ((target.GetCalling and target:GetCalling()) or (target.GetInUsing and target:GetInUsing())) or false)
+        local disabled = trap and (target:GetLocked() and CurTime() + 1 or target:GetNextUseTime())
+            or target:GetNWFloat("FoxPhoneDisabledUntil", 0)
+        net.WriteFloat(disabled)
     end
     net.Send(ply)
 end
+
+function F.TryActivateTrap(ply, trap)
+    if not F.CanAct(ply) then return false end
+    local state, now = scans[ply], CurTime()
+    if not state or now < state.ready or now >= state.ends then return false end
+    if now < (state.nextTrap or 0) or not state.targets[trap] or not F.ValidTrap(ply, trap) then return false end
+    if not trap:IsUsable() then return false end
+    if ply:GetAimVector():Dot((trap:GetPos() - ply:EyePos()):GetNormalized()) < F.AimDot then return false end
+    if hook.Run("TTTCanUseTraitorButton", trap, ply) == false then return false end
+    -- Reserve before map outputs: outputs can re-enter, remove entities or end a round.
+    state.nextTrap = now + 0.25
+    local remove = trap.RemoveOnPress or trap:GetDelay() < 0
+    if remove then trap:SetLocked(true)
+    else trap:SetNextUseTime(now + math.max(0.25, trap:GetDelay())) end
+    trap:TriggerOutput("OnPressed", ply)
+    if remove and IsValid(trap) then trap:Remove() end
+    hook.Run("TTTTraitorButtonActivated", trap, ply)
+    if scans[ply] == state and F.CanAct(ply) then SendTargets(ply, state) end
+    Status(ply, "TRAP ACTIVATED")
+    return true
+end
+
 net.Receive("FoxPhoneHackStart", function(_, ply)
     if not F.CanAct(ply) then return end
     if scans[ply] or CurTime() < ply:GetNWFloat("FoxHackCooldown", 0) then return end
@@ -116,7 +161,7 @@ net.Receive("FoxPhoneHackStart", function(_, ply)
         if not IsValid(ply) or not scans[ply] or not F.CanAct(ply) then return end
         ply:EmitSound("sjz/mxw/C202_Ultimate_SignalDecipher_Char_Activate.wav", 65)
     end)
-    Status(ply, "DECODING PHONE SIGNALS")
+    Status(ply, "SCANNING DEVICES")
 end)
 hook.Add("Think", "FoxPhoneHackScan", function()
     local now = CurTime()
@@ -135,8 +180,12 @@ net.Receive("FoxPhoneHackShock", function(_, ply)
     local state = scans[ply]
     local now = CurTime()
     if not state or now < state.ready or now >= state.ends then return end
-    if now < ply:GetNWFloat("FoxShockCooldown", 0) then return end
     local phone = Entity(index)
+    if IsValid(phone) and phone:GetClass() == F.TrapClass then
+        F.TryActivateTrap(ply, phone)
+        return
+    end
+    if now < ply:GetNWFloat("FoxShockCooldown", 0) then return end
     if not state.targets[phone] or not F.ValidPhone(ply, phone) then return end
     if now < phone:GetNWFloat("FoxPhoneDisabledUntil", 0) then return end
     local position = F.PhonePosition(phone)
@@ -144,7 +193,11 @@ net.Receive("FoxPhoneHackShock", function(_, ply)
     -- Reserve cooldown before callbacks such as Fake/CancelCall can run.
     ply:SetNWFloat("FoxShockCooldown", now + F.ShockCooldown)
     local owner = F.PhoneHolder(phone)
-    phone:DestroyPhone()
+    if phone:GetClass() == F.RadioClass then
+        phone:DestroyRadio()
+    else
+        phone:DestroyPhone()
+    end
     for scanner, scan in pairs(scans) do
         if F.CanAct(scanner) and now >= scan.ready then SendTargets(scanner, scan) end
     end
@@ -179,12 +232,20 @@ end
 hook.Add("ZB_PreRoundStart", "FoxPhoneHackRoundStart", ResetRound)
 hook.Add("ZB_EndRound", "FoxPhoneHackRoundEnd", ResetRound)
 
--- Block the old unrestricted J/console endpoint if the original addon is installed.
+-- Disable both legacy tablet entry points, including the independent K shortcut.
+-- The Technician Hack Tablet radial menu uses FoxPhoneHackStart and remains role/cooldown checked.
 local IgnoreLegacyShortcut = function() end
 local function DisableLegacyShortcut()
-    if net.Receivers and net.Receivers.mxw_sjz_use and net.Receivers.mxw_sjz_use ~= IgnoreLegacyShortcut then
-        net.Receive("mxw_sjz_use", IgnoreLegacyShortcut)
+    for _, name in ipairs({"mxw_sjz_use", "mxw_sjz_music"}) do
+        if net.Receivers and net.Receivers[name] and net.Receivers[name] ~= IgnoreLegacyShortcut then
+            net.Receive(name, IgnoreLegacyShortcut)
+        end
     end
 end
 DisableLegacyShortcut()
+hook.Add("InitPostEntity", "FoxPhoneHackDisableLegacyShortcut", DisableLegacyShortcut)
+hook.Add("OnReloaded", "FoxPhoneHackDisableLegacyShortcut", function()
+    timer.Simple(0, DisableLegacyShortcut)
+end)
+timer.Simple(0, DisableLegacyShortcut)
 timer.Create("FoxPhoneHackDisableLegacyShortcut", 2, 0, DisableLegacyShortcut)

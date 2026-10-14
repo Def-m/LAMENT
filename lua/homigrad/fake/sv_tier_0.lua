@@ -162,7 +162,22 @@ function hg.Ragdoll_Create(ply)
 			ragdoll.bull:Remove()
 		end
 	end)
-	ragdoll:AddCallback("PhysicsCollide", function(outEnt, data) hook_Run("Ragdoll Collide", ragdoll, data) end)
+	ragdoll:AddCallback("PhysicsCollide", function(outEnt, data)
+		-- Impact damage can gib a ragdoll or change its collision state. Dispatch
+		-- after the physics callback, retaining this impact's data (not a reused
+		-- engine table). Keep entity/physics-object references and copy vectors.
+		local impact = {}
+		for key, value in pairs(data) do
+			impact[key] = isvector(value) and Vector(value.x, value.y, value.z) or value
+		end
+		timer.Simple(0, function()
+			if not IsValid(ragdoll) then return end
+			-- Worldspawn deliberately fails IsValid; map impacts must still deal fall damage.
+			if impact.HitEntity ~= game.GetWorld() and not IsValid(impact.HitEntity) then return end
+			if not IsValid(impact.PhysObject) or not IsValid(impact.HitObject) then return end
+			hook_Run("Ragdoll Collide", ragdoll, impact)
+		end)
+	end)
 	local velocity = ply:GetVelocity()
 	--local phys = ragdoll:GetPhysicsObject()
 	--if IsValid(phys) then --phys:SetMass(20)
@@ -972,6 +987,13 @@ hook.Add("OnAmputateLimb", "hg-fakeboneflop-amputation", function(org, ent, limb
 end)
 
 function hg.Fake(ply, huyragdoll, no_freemove, force)
+    -- Protect VIC setup and its role intro, including forced knockdowns.
+    -- Death ragdolls are created separately and are not blocked here.
+    if zb and zb.CROUND == "president" and IsValid(ply) and ply:Alive() then
+        local mode = zb.modes and zb.modes.president
+        if zb.ROUND_STATE == 0 or (zb.ROUND_STATE == 1 and mode
+            and CurTime() < (mode.ragdollUnlockAt or 0)) then return end
+    end
 	ply.switchingseat = nil
 	if not force and (ply.hg_no_fake_until or 0) > CurTime() then return end
 	if ply:GetMoveType() == 0 then return end
@@ -1126,6 +1148,81 @@ hook.Add("CanControlFake","stunnednocontrol",function(ply,rag)
 end)
 
 local util_TraceLine = util.TraceLine
+-- Reliable, owner-only notification: dedicated clients predict weapon switches
+-- independently of the server and may receive the weapon/ragdoll later.
+util.AddNetworkString("ChudmorseGetupWeapon")
+function hg.ClearFakeUpWeaponRestore(ply)
+    local pending = ply.hgFakeUpWeaponRestore
+    ply.hgFakeUpWeaponRestore = nil
+    if not pending or not pending.sent or not IsValid(ply) or ply:IsBot() then return end
+    net.Start("ChudmorseGetupWeapon")
+    net.WriteUInt(pending.token, 32)
+    net.WriteBool(false)
+    net.Send(ply)
+end
+
+-- CUserCmd has SelectWeapon, but no GetWeaponSelect in Garry's Mod.
+-- Clients may cancel only their own currently pending get-up restoration.
+util.AddNetworkString("ChudmorseCancelGetupWeapon")
+net.Receive("ChudmorseCancelGetupWeapon", function(_, ply)
+    local token = net.ReadUInt(32)
+    local pending = ply.hgFakeUpWeaponRestore
+    if pending and pending.token == token then hg.ClearFakeUpWeaponRestore(ply) end
+end)
+
+local function RestoreFakeUpWeapon(ply, wep, token)
+    if not IsValid(ply) or not ply:Alive() then return false end
+    local pending = ply.hgFakeUpWeaponRestore
+    if not pending or pending.token ~= token or IsValid(ply.FakeRagdoll) then return false end
+    if not IsValid(wep) or wep:GetOwner() ~= ply then return false end
+    if not pending.sent and not ply:IsBot() then
+        pending.sent = true
+        net.Start("ChudmorseGetupWeapon")
+        net.WriteUInt(token, 32)
+        net.WriteBool(true)
+        net.WriteUInt(wep:EntIndex(), 16)
+        net.WriteString(wep:GetClass())
+        net.WriteFloat(pending.expires)
+        net.Send(ply)
+    end
+    if ply:GetActiveWeapon() ~= wep then
+        -- Use the engine switch path so Holster/Deploy and prediction agree.
+        ply:SelectWeapon(wep:GetClass())
+    end
+    ply.ActiveWeapon = nil
+    return true
+end
+
+-- Spawn and its deferred callbacks can reset selection after the next tick.
+-- Feed the saved weapon into command processing during the get-up transition.
+hook.Add("StartCommand", "ChudmorseRestoreGetupWeapon", function(ply, cmd)
+    local pending = ply.hgFakeUpWeaponRestore
+    if not pending then return end
+    local wep = pending.weapon
+    if not ply:Alive() or IsValid(ply.FakeRagdoll) or CurTime() > pending.expires
+        or not IsValid(wep) or wep:GetOwner() ~= ply
+        or (ply.organism and ply.organism.larmamputated and ply.organism.rarmamputated) then
+        hg.ClearFakeUpWeaponRestore(ply)
+        return
+    end
+    local active = ply:GetActiveWeapon()
+    local handsClass = hg.GetHandsWeaponClass and hg.GetHandsWeaponClass(ply) or "weapon_hands_sh"
+    if IsValid(active) and active ~= wep and active:GetClass() ~= handsClass then
+        hg.ClearFakeUpWeaponRestore(ply)
+        return
+    end
+    if active ~= wep then cmd:SelectWeapon(wep) end
+end)
+
+hook.Add("PlayerDeath", "ChudmorseClearGetupWeapon", function(ply)
+    hg.ClearFakeUpWeaponRestore(ply)
+    ply.hgFakeUpSpawning = nil
+    ply.hgFakeUpSpawnToken = nil
+end)
+hook.Add("PlayerSpawn", "ChudmorseClearGetupWeapon", function(ply)
+    if not OverrideSpawn and not ply.hgFakeUpSpawning then hg.ClearFakeUpWeaponRestore(ply) end
+end)
+
 function hg.FakeUp(ply, forced, instant)
 	local ragdoll = ply.FakeRagdoll
 	
@@ -1166,6 +1263,12 @@ function hg.FakeUp(ply, forced, instant)
 	if not pos and not forced then return end
 	local oldpos = pos
 
+    -- Capture before get-up hooks and the internal Spawn can alter selection.
+    local wep = ply:GetActiveWeapon()
+    if not IsValid(wep) or wep:GetOwner() ~= ply then
+        local remembered = ply.ActiveWeapon
+        wep = IsValid(remembered) and remembered:GetOwner() == ply and remembered or nil
+    end
 	hook_Run("Fake Up", ply, ragdoll)
 
 	ply.FakeRagdollOld = ragdoll
@@ -1207,7 +1310,12 @@ function hg.FakeUp(ply, forced, instant)
 	-- reset HP/organism state to the default 100 HP.
 	local hp, armor, maxhp = ply:Health(), ply:Armor(), ply:GetMaxHealth()
 	ply.hgFakeUpSpawning = true
-	local ang, wep = ply:EyeAngles(), ply:GetActiveWeapon()
+    ply.hgFakeWeaponSwitch = (ply.hgFakeWeaponSwitch or 0) + 1
+    local weaponRestoreToken = ply.hgFakeWeaponSwitch
+    ply.hgFakeUpSpawnToken = weaponRestoreToken
+    ply.hgFakeUpWeaponRestore = {weapon = wep, token = weaponRestoreToken, expires = CurTime() + 3 + math.Clamp(ply:Ping() / 1000, 0, 2)}
+    local ang = ply:EyeAngles()
+    ply.ActiveWeapon = nil
 	hg.OverrideSpawn(ply)
 	//local pos = ply:GetPos()
 	ply:Spawn()
@@ -1220,7 +1328,9 @@ function hg.FakeUp(ply, forced, instant)
 	ply:SetHealth(hp)
 	ply:SetArmor(armor)
 	ply:SetEyeAngles(ang)
-        if IsValid(wep) then ply:SelectWeapon(wep:GetClass()) else ply:SelectWeapon(hg.GetHandsWeaponClass and hg.GetHandsWeaponClass(ply) or "weapon_hands_sh") end
+    if not RestoreFakeUpWeapon(ply, wep, weaponRestoreToken) then
+        ply:SelectWeapon(hg.GetHandsWeaponClass and hg.GetHandsWeaponClass(ply) or "weapon_hands_sh")
+    end
 	
 	if IsValid(ragdoll) and ragdoll.rope_attach then
 		ply:PickupWeapon(ragdoll.rope_attach)
@@ -1233,13 +1343,16 @@ function hg.FakeUp(ply, forced, instant)
 	-- cleared. Re-assert the saved vitals after that event, then clear the
 	-- per-player fake-up guard. This keeps ragdolling from becoming a heal.
 	timer.Simple(0, function()
-		if not IsValid(ply) then return end
+        if not IsValid(ply) or ply.hgFakeUpSpawnToken ~= weaponRestoreToken then return end
+        if IsValid(ply.FakeRagdoll) then return end
+        RestoreFakeUpWeapon(ply, wep, weaponRestoreToken)
 		if ply:Alive() then
 			ply:SetMaxHealth(maxhp)
 			ply:SetHealth(hp)
 			ply:SetArmor(armor)
 		end
 		ply.hgFakeUpSpawning = nil
+        ply.hgFakeUpSpawnToken = nil
 	end)
 
 	if IsValid(ragdoll) then

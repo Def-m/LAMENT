@@ -9,17 +9,29 @@ local function Setup()
 	-- No map loot at all -- nothing spawns on its own.
 	MODE.LootSpawn = false
 
-	-- 0 = never picked by the random/queue rotation, same mechanism the real
-	-- Event mode uses to stay out of it (verified: a 0-weight mode
-	-- contributes nothing in WeightedChanceMode's pick, so it can't be
-	-- auto-selected). Still fully choosable by hand via the Game Mode
-	-- Manager or !setmode bartvshomer -- that whitelist check lives in
-	-- sv_roundsystem.lua and is separate from this.
-	MODE.Chance = 0
+	-- Back in the normal random/queue rotation. Still also choosable by hand
+	-- via the Game Mode Manager or !setmode bartvshomer (the whitelist entry
+	-- in sv_roundsystem.lua is what makes that menu show it).
+	MODE.Chance = 0.02
+
+	-- No karma loss in this mode. This is the same per-mode switch Event, DM,
+	-- Chud Beasts etc. use -- the guilt system bails out early for any round
+	-- with GuiltDisabled set, for both damage and kills.
+	MODE.GuiltDisabled = true
 
 	local BART_MODEL = "models/hellinspector/the_simpsons_game/bart.mdl"
 	local HOMER_MODEL = "models/hellinspector/homerharm/homerfm_pm.mdl"
-	local HOMER_HEALTH = 235
+	local HOMER_HEALTH = 135
+
+	-- 7 minute rounds. The round ends by itself when the timer hits zero.
+	local ROUND_SECONDS = 420
+
+	-- The base round system also has its own "too boring" cutoff measured
+	-- from the start of the pre-round countdown, using this value. Without
+	-- setting it, it silently inherits whatever the PREVIOUS mode used (300
+	-- by default, 240 after TDM...) and would cut a 7 minute round short.
+	-- Kept a bit above ROUND_SECONDS so our own timer is always what ends it.
+	MODE.ROUND_TIME = ROUND_SECONDS + 30
 
 	-- Tracked so the health-sync Think hook below knows who to poll, and so
 	-- we don't touch anyone else's globals.
@@ -85,6 +97,16 @@ local function Setup()
 		end
 
 		local health = currentHomer:Health()
+
+		-- HP is the only thing that's supposed to be able to kill Homer. His
+		-- toughness (sv_bartvshomer_powers.lua) keeps his organs, blood and
+		-- consciousness from ever failing, and this game normally kills
+		-- through exactly those -- so on its own he'd just stand there at 0 HP.
+		-- Enforce the HP rule directly instead.
+		if health <= 0 and currentHomer:Alive() and zb.ROUND_STATE == 1 then
+			currentHomer:Kill()
+		end
+
 		if health == lastSyncedHealth then return end
 
 		if health < lastSyncedHealth then
@@ -104,6 +126,7 @@ local function Setup()
 		game.CleanUpMap()
 
 		currentHomer = nil
+		SetGlobalFloat("BvH_RoundEnd", 0)
 
 		for i, ply in player.Iterator() do
 			if ply:Team() == TEAM_SPECTATOR then continue end
@@ -141,15 +164,28 @@ local function Setup()
 			BroadcastSound("woohoo")
 		end
 
+		if endround then return true end
+
+		-- Time's up: the round ends by itself. Nobody got wiped out, so Homer
+		-- didn't win -- no woohoo for a timeout.
+		local roundEnd = GetGlobalFloat("BvH_RoundEnd", 0)
+		if roundEnd > 0 and CurTime() >= roundEnd then
+			return true
+		end
+
 		return endround
 	end
 
 	function MODE:EndRound()
-		-- Nothing to clean up yet. Remorse handles the normal round-end transition.
+		-- Hides the on-screen timer. Remorse handles the normal round-end transition.
+		SetGlobalFloat("BvH_RoundEnd", 0)
 	end
 
 	function MODE:RoundStart()
-		-- The reveal screen is sent from GiveEquipment, once every role is assigned.
+		-- The reveal screen is sent from GiveEquipment, once every role is
+		-- assigned. The 7 minutes only start counting here, after the pre-round
+		-- countdown, when players can actually move.
+		SetGlobalFloat("BvH_RoundEnd", CurTime() + ROUND_SECONDS)
 	end
 
 	function MODE:RoundThink()
@@ -187,6 +223,7 @@ local function Setup()
 		lastSyncedHealth = HOMER_HEALTH
 		homerHitCount = 0
 		homerWinSoundPlayed = false
+		SetGlobalFloat("BvH_RoundEnd", 0)
 		SetGlobalFloat("BvH_HomerHealth", HOMER_HEALTH)
 		SetGlobalFloat("BvH_HomerLastHit", -1000)
 

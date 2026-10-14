@@ -422,16 +422,33 @@ local function DrawModernRadialCenterText(text, x, y, maxWidth, color)
 	cam.PopModelMatrix()
 end
 
+-- Keep one bad/partially-synced option from breaking the whole wheel.
+local radialOptionErrors = {}
+local function RebuildRadialOptions()
+    table.Empty(hg.radialOptions)
+    for id, callback in SortedPairs(hook.GetTable().radialOptions or {}) do
+        local firstNew = #hg.radialOptions + 1
+        local ok, err = xpcall(callback, debug.traceback)
+        if not ok then
+            for i = #hg.radialOptions, firstNew, -1 do hg.radialOptions[i] = nil end
+            if (radialOptionErrors[id] or 0) <= RealTime() then
+                radialOptionErrors[id] = RealTime() + 10
+                ErrorNoHalt("[Chudmorse radial] Option " .. tostring(id) .. ": " .. tostring(err) .. "\n")
+            end
+        end
+    end
+end
+
 local function CreateRadialMenu(options_arg, bAutoClose)
+    local lply = LocalPlayer()
+	if not IsValid(lply) then return end
 	local sizeX, sizeY = ScrW(), ScrH()
 	hg.radialOptions = {}
-	local paining = lply.organism and lply.organism.pain and (lply.organism.pain > 100 or lply.organism.brain > 0.2) or false
+	local org = lply.organism or {}
+	local paining = (tonumber(org.pain) or 0) > 100 or (tonumber(org.brain) or 0) > 0.2
 	
 	if !options_arg then
-		local functions = hook.GetTable()["radialOptions"]
-		for i, func in SortedPairs(functions) do
-			func()
-		end
+		RebuildRadialOptions()
 	end
 
 	//hook_Run("radialOptions")
@@ -459,13 +476,14 @@ local function CreateRadialMenu(options_arg, bAutoClose)
 	if !options_arg then input.SetCursorPos(sizeX / 2, sizeY / 2) end
 
 	function menuPanel:Close()
-		if not IsValid(menuPanel) then return end
-		menuPanel:AlphaTo(0,0.1,0,function()
-			if IsValid(menuPanel) then
-				menuPanel:Remove()
-				menuPanel = nil
-			end
-		end)
+        if self.Closing then return end
+        self.Closing = true
+        self:AlphaTo(0, 0.1, 0, function()
+            if not IsValid(self) then return end
+            if menuPanel == self then menuPanel = nil end
+            if MENUPANELHUYHUY == self then MENUPANELHUYHUY = nil end
+            self:Remove()
+        end)
 	end
 
 	local thinkwait = 0
@@ -474,13 +492,7 @@ local function CreateRadialMenu(options_arg, bAutoClose)
 			if menuPanel:GetAlpha() < 255 then return end
 			if thinkwait > CurTime() then return end
 			thinkwait = CurTime() + 0.25
-			table.Empty(hg.radialOptions)
-			local functions = hook.GetTable()["radialOptions"]
-			
-			for i, func in SortedPairs(functions) do
-				//if i == "zmeyka_test" then continue end
-				func()
-			end
+			RebuildRadialOptions()
 		end
 	end
 	
@@ -700,7 +712,7 @@ local function CreateRadialMenu(options_arg, bAutoClose)
 end
 
 local function PressRadialMenu(mouseClick)
-	local options = hg.radialOptions
+	local options = hg.radialOptions or {}
 	--print(options[current_option][1])
 	--[[if lply.organism and lply.organism.pain and lply.organism.pain > 100 then
 		hook_Run("RadialMenuPressed")
@@ -747,28 +759,68 @@ hook.Add("HG_OnOtrub", "resetshit", function(ply)
 	end
 end)
 
-hook.Add( "PlayerBindPress", "PlayerBindPressExample2huy", function( ply, bind, pressed )
-	if string.find(bind, "+menu") then
+-- Opening the gameplay wheel must not depend on sandbox spawn-menu access.
+-- A server addon can consume PlayerBindPress before this handler gets it.
+local radialBindHeld = false
+local radialPhysicalHeld = false
+local function BeginRadialInput()
+    if radialBindHeld then return end
+    local ply = LocalPlayer()
+    if not IsValid(ply) or (ply.organism and ply.organism.otrub) then return end
+    if gui.IsGameUIVisible() or gui.IsConsoleVisible() then return end
+    if IsValid(vgui.GetKeyboardFocus()) then return end
+    if vgui.CursorVisible() and not IsValid(MENUPANELHUYHUY) then return end
+    if FreakCityDrone and FreakCityDrone.GetActive and IsValid(FreakCityDrone.GetActive(ply)) then return end
+    if Glide and IsValid(Glide.currentVehicle) then return end
+    if not IsValid(MENUPANELHUYHUY) then CreateRadialMenu() end
+    radialBindHeld = IsValid(MENUPANELHUYHUY)
+end
 
-		if (lply.organism and lply.organism.otrub) then
-			return (bind == "+menu") or nil
-		end
+local function EndRadialInput()
+    if not radialBindHeld then return end
+    radialBindHeld = false
+    if IsValid(menuPanel) and not menuPanel.Closing then PressRadialMenu(1) end
+end
 
-		if (bind == "+menu") then
-			if pressed and !IsValid(MENUPANELHUYHUY) then
-				CreateRadialMenu()
-			else
-				PressRadialMenu(1)
-			end
-		else
-			if lply:IsAdmin() then return end
-		end
+-- A dedicated bind also works if a permissions addon owns +menu entirely.
+concommand.Add("+hg_radial", BeginRadialInput)
+concommand.Add("-hg_radial", EndRadialInput)
 
-		return true
-	end
+-- Shared by the gameplay handler and the sandbox permission guard. Whichever
+-- hook runs first opens the same wheel, without granting sandbox permissions.
+function hg.HandleRadialBind(bind, pressed)
+    bind = string.lower(string.Trim(bind or ""))
+    if bind ~= "+menu" and bind ~= "+hg_radial" then return end
+    if pressed then BeginRadialInput() else EndRadialInput() end
+    return true
+end
+
+hook.Add("PlayerBindPress", "PlayerBindPressExample2huy", function(ply, bind, pressed)
+    if hg.HandleRadialBind(bind, pressed) then return true end
+    bind = string.lower(string.Trim(bind or ""))
+    if bind == "+menu_context" and IsValid(ply) and not ply:IsAdmin() then return true end
 end)
 
+local function RadialKeyDown(command)
+    local key = input.LookupBinding(command, true)
+    local code = key and input.GetKeyCode(key)
+    return code and code > 0 and input.IsButtonDown(code) or false
+end
+
+local function PollRadialInput()
+    local down = RadialKeyDown("+menu") or RadialKeyDown("+hg_radial")
+    if down ~= radialPhysicalHeld then
+        radialPhysicalHeld = down
+        if down then BeginRadialInput() else EndRadialInput() end
+    end
+end
+
+-- A returning Think hook from another addon must not suppress input polling.
+-- One client timer; no network traffic or changes to action authorization.
+timer.Create("ChudmorseRadialInput", 0.01, 0, PollRadialInput)
+
 hook.Add("Think", "hg-radial-menu", function()
+	if not IsValid(lply) then return end
 	if (lply.organism and lply.organism.otrub) then
 
 		if IsValid(menuPanel) then

@@ -76,6 +76,8 @@ local list = {
 	"noradrenaline",
 	"fearadd",
 	{"depression", 1, true},
+	{"psycheSchizo", 1, true}, -- [JUDGE PORT] schizo
+	"schizoEpisodeEnd", -- [JUDGE PORT] schizo
 	{"blood", 5000},
 	{"bleed", 100, true}, 
 	"bloodtype",

@@ -278,21 +278,15 @@ local function DrawScanHud()
     local arcHalfWidth = frameWidth * 0.315 * (0.98 + 0.02 * alpha)
     local arcHalfHeight = frameHalfHeight - 24 * scale
     local arcTopY, arcBottomY = arcCenterY - arcHalfHeight, arcCenterY + arcHalfHeight
-    local countX = arcCenterX + arcHalfWidth - 4 * scale
-    local countY = arcCenterY - 27 * scale
     local bow = frameWidth * 0.08
     DrawSideArc(arcCenterX, arcTopY, arcBottomY,
         arcHalfWidth, bow, -1, 88 * alpha)
     DrawSideArc(arcCenterX, arcTopY, arcBottomY,
-        arcHalfWidth, bow, 1, 88 * alpha, countY - 10 * scale, countY + 64 * scale)
+        arcHalfWidth, bow, 1, 88 * alpha)
 
     DrawDurationBattery(centerX, topY, hud:GetRemainingFraction(now), alpha)
 
-    draw.SimpleText("PHONE SIGNALS", "FoxPhoneHack_ScanHudLabel", countX, countY,
-        Color(255, 255, 255, math.floor(190 * alpha + 0.5)), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
-    local changed = 1 - SmoothStep((now - hud.countChangedAt) / 0.25)
-    draw.SimpleText(tostring(hud.count), "FoxPhoneHack_ScanHudCount", countX, countY + 24 * scale,
-        Color(255, 255, 255, math.floor((222 + 33 * changed) * alpha + 0.5)), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+
 end
 
 hook.Add("HUDPaint", "FoxPhoneHack_ScanOverlay", DrawScanHud)

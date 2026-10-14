@@ -6,7 +6,8 @@ SWEP.Category = "Weapons - Melee"
 SWEP.Spawnable = true
 SWEP.AdminOnly = false
 
-SWEP.WorldModel = "models/weapons/w_jjife_t.mdl"
+-- Match the physical/drop model to the visible baton, not the knife proxy.
+SWEP.WorldModel = "models/weapons/tacint_melee/w_tonfa.mdl"
 SWEP.WorldModelReal = "models/weapons/tfa_nmrih/v_me_hatchet.mdl"
 SWEP.WorldModelExchange = "models/weapons/tacint_melee/w_tonfa.mdl"
 SWEP.ViewModel = ""

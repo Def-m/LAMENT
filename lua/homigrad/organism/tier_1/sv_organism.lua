@@ -6,8 +6,9 @@ local panicattack_threshold = 0.45
 local panicattack_add_decay_time = 90
 local panicattack_rise_time = 10
 local panicattack_decay_time = 200
-local panicattack_gain_chance = 3
-local panicattack_gain_mul = 0.4
+-- Balance: fewer panic gains, with half the previous buildup per event.
+local panicattack_gain_chance = 5
+local panicattack_gain_mul = 0.2
 local panicattack_disorientation = 0.45
 local panicattack_adrenaline_add_target = 4
 local panicattack_adrenaline_add_rise_time = 14
@@ -271,8 +272,10 @@ local function send_organism(org, ply)
 
 	sendtable.superfighter = org.superfighter
 	sendtable.depression = org.depression
+	sendtable.psycheSchizo = org.psycheSchizo or 0 -- [JUDGE PORT] schizo
+	sendtable.schizoEpisodeEnd = org.schizoEpisodeEnd or 0 -- [JUDGE PORT] schizo
 
-	net.Start("organism_send", hg_unreliable_nets:GetBool())
+	net.Start("organism_send", hg_unreliable_nets:GetBool() and not org.owner.fullsend)
 	net.WriteTable(not hg_developer:GetBool() and sendtable or org)
 	net.WriteBool(org.owner.fullsend)
 	net.WriteBool(false)
@@ -356,7 +359,7 @@ local function send_bareinfo(org)
 	rf:AddPVS(org.owner:GetPos())
 	if org.owner:IsPlayer() then rf:RemovePlayer(org.owner) end
 
-	net.Start("organism_send", hg_unreliable_nets:GetBool())
+	net.Start("organism_send", hg_unreliable_nets:GetBool() and not org.owner.fullsend)
 	net.WriteTable(not hg_developer:GetBool() and sendtable or org)
 	net.WriteBool(org.owner.fullsend)
 	net.WriteBool(true)
@@ -829,7 +832,8 @@ hook.Add("Org Think", "Main", function(owner, org, timeValue)
 
 	local just_went_uncon = not org.otrub and org.needotrub
 	local just_woke_up = not org.needotrub and org.otrub and (org.uncon_timer or 0) > 6
-	if isPly and just_went_uncon then hook.Run("HG_OnOtrub", owner); hook.Run("PlayerDropWeapon", owner) end
+	-- Losing consciousness changes control, not weapon ownership.
+	if isPly and just_went_uncon then hook.Run("HG_OnOtrub", owner) end
 	if isPly and just_woke_up then hook.Run("HG_OnWakeOtrub", owner) end
 
 	org.canmove = (org.spine2 < hg.organism.fake_spine2 and org.spine3 < hg.organism.fake_spine3) and not org.otrub

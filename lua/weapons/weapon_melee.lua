@@ -333,6 +333,8 @@ if CLIENT then
             return self.worldModel
         else
             self.worldModel = ClientsideModel(self.WorldModel)
+            if not IsValid(self.worldModel) then return end
+            local model = self.worldModel
             self.worldModel:SetNoDraw(true)
             self.worldModel:SetupBones()
             self:CallOnRemove("remove_worldmodel1",function()
@@ -349,7 +351,7 @@ if CLIENT then
     function SWEP:DrawWorldModel()
 		local ent = self:GetOwner()
         if not IsValid(ent) then
-            self:DrawWorldModel2()
+            return self:DrawWorldModel2()
         end
         
         if ent:IsNPC() then
@@ -397,10 +399,12 @@ if CLIENT then
             self.worldModel = self:GetWM()
         end
         
+        if not IsValid(self.worldModel) then return end
         self.worldModel:SetNoDraw(true)
-        
-        if IsValid(owner) and (not owner.shouldTransmit or owner.NotSeen) then return end
-        if not IsValid(owner) and (not self.shouldTransmit or self.NotSeen) then return end
+
+        -- Use the visible body/ragdoll, not the hidden player entity.
+        if IsValid(owner) and hg.IsHeldWeaponCulled(owner) then return end
+        if not IsValid(owner) and (self.shouldTransmit == false or self.NotSeen == true) then return end
 
 		local WorldModel = self.worldModel
         
@@ -2767,9 +2771,7 @@ function SWEP:CustomThink()
     local actwep = owner.GetActiveWeapon and owner:GetActiveWeapon()
 
 	if SERVER and not owner:IsNPC() and owner.organism and (not owner.organism.canmove or ((owner.organism.stun - CurTime()) > 0) or (owner.organism.larm == 1 and owner.organism.rarm == 1)) and IsValid(actwep) and self == actwep then
-		self:RemoveFake()
-		
-		hg.drop(owner)
+        -- Incapacitation prevents attacks but must not discard the equipped weapon.
 
 		return
 	end
@@ -2844,7 +2846,7 @@ function SWEP:CustomThink()
 
     self:SetHold((self.Canselfharm and self:IsSelfHarming() and self.SelfHarmHoldType) or (owner.suiciding and self.SuicideHoldType) or self.HoldType)
 
-    if SERVER and owner.organism and owner.organism.rarmamputated then
+    if SERVER and owner.organism and owner.organism.rarmamputated and not hg.KeepWeaponInRagdoll(owner) then
         self:RemoveFake()
 		
 		hg.drop(owner)
@@ -4323,3 +4325,12 @@ end
 
     return true
 end]]
+
+-- Drop is also called by inventory transfers and disarms, not just chat commands.
+if SERVER then
+    function SWEP:OnDrop()
+        timer.Simple(0, function()
+            if IsValid(self) and hg.TrackDroppedMelee then hg.TrackDroppedMelee(self) end
+        end)
+    end
+end

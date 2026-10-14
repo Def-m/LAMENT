@@ -3,6 +3,8 @@ hg.organism.module.depression = {}
 local module = hg.organism.module.depression
 
 local depression_max = 1
+-- Balance: halve all incoming depression, including queued event gains.
+local depression_gain_mul = 0.5
 local depression_drain_time = 300
 local depression_drain_boost_time = 100
 local depression_pain_threshold = 60
@@ -25,7 +27,7 @@ local depression_cold_gain = 0.01
 local depression_panic_gain = 0.02
 local depression_amputation_gain = 0.015
 
-local selfharm_threshold = 0.4
+local selfharm_threshold = 0.65
 local selfharm_roll_time_min = 5
 local selfharm_roll_time_max = 12
 local selfharm_chance_min = 0.25
@@ -53,14 +55,14 @@ local selfharm_pending_phrases = {
 	"I can't stop thinking about the knife...",
 }
 
-local depression_stage_thresholds = {0.25, 0.35, 0.5}
+local depression_stage_thresholds = {0.4, 0.55, 0.7}
 local depression_stage_thoughts = {
-	[0.25] = "You are feeling down.",
-	[0.35] = "You are feeling upset.",
-	[0.5] = "You are feeling depressed.",
+	[0.4] = "You are feeling down.",
+	[0.55] = "You are feeling upset.",
+	[0.7] = "You are feeling depressed.",
 }
 local depression_stage_cooldown = 30
-local depression_dark_threshold = 0.65
+local depression_dark_threshold = 0.85
 local depression_dark_thought_min = 45
 local depression_dark_thought_max = 120
 local depression_dark_thoughts = {
@@ -75,21 +77,21 @@ local depression_dark_thoughts = {
 	"End it all.",
 }
 
-local depression_notify_stage_thresholds = {0.35, 0.45, 0.55}
+local depression_notify_stage_thresholds = {0.5, 0.65, 0.8}
 local depression_notify_stage_phrases = {
-	[0.35] = {
+	[0.5] = {
 		"I'm feeling down..",
 		"I'm feeling kinda down..",
 		"Dude... I'm bored..",
 		"Mmmh... I should get busy with something.",
 	},
-	[0.45] = {
+	[0.65] = {
 		"I feel upset..",
 		"I really feel sad..",
 		"Does it get worse than this?",
 		"Staying strong... I hope.",
 	},
-	[0.55] = {
+	[0.8] = {
 		"Fuck my life.",
 		"I cant take this anymore.",
 		"I need something sharp.",
@@ -414,6 +416,8 @@ module[2] = function(owner, org, timeValue)
 		org.depressionadd = max(org.depressionadd - applied, 0)
 		add = add + applied
 	end
+
+	add = add * depression_gain_mul
 
 	local adrenaline = org.adrenaline or 0
 	if adrenaline > depression_adrenaline_suppress_start then

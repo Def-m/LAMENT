@@ -373,8 +373,8 @@ Despite being zombie, still bears appearance of a normal human.]],
 		end,
 	},
 	["traitor_fox"] = {
-		Name = "The Fox",
-		Description = [[You can hear and track police phone calls while they are being made.]],
+		Name = "Technician",
+		Description = [[Track police calls and use the Hack Tablet to shock phones or remotely activate map traps.]],
 		SpawnFunction = function(ply)
 			ApplyTraitorLoadout(ply)
 		end,

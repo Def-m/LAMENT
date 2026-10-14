@@ -252,22 +252,22 @@ if SERVER then
     end, 2, "name; message"}
 
 local VIP_MODEL_WHITELIST = {
-		["models/gacommissions/tungtungtungsahur.mdl"] = true,
-		["models/nikita488/player/joker.mdl"] = true,
-		["models/blop/expie/expie.mdl"] = true,
-		["models/player/skeleton.mdl"] = true,
-		["models/player/big_boss.mdl"] = true,
-		["models/player/corpse1.mdl"] = true,
-		["models/player/charple.mdl"] = true,
-		["models/dannio/pm/rizzler_costco.mdl"] = true,
+        ["models/gacommissions/tungtungtungsahur.mdl"] = true,
+        ["models/nikita488/player/joker.mdl"] = true,
+        ["models/blop/expie/expie.mdl"] = true,
+        ["models/player/skeleton.mdl"] = true,
+        ["models/player/big_boss.mdl"] = true,
+        ["models/player/corpse1.mdl"] = true,
+        ["models/player/charple.mdl"] = true,
+        ["models/dannio/pm/rizzler_costco.mdl"] = true,
         ["models/dannio/pm/aj_costco.mdl"] = true,
-		["models/player/efeber/tonysop.mdl"] = true,
-		["models/player/h3_masterchief_player.mdl"] = true,
-		["models/deadspace2023/dsrisaaclv3.mdl"] = true,
-		["models/player/group01/clark_playermodel.mdl"] = true,
-		["models/player/ntwffelixkranken.mdl"] = true,
+        ["models/player/efeber/tonysop.mdl"] = true,
+        ["models/player/h3_masterchief_player.mdl"] = true,
+        ["models/deadspace2023/dsrisaaclv3.mdl"] = true,
+        ["models/player/group01/clark_playermodel.mdl"] = true,
+        ["models/player/ntwffelixkranken.mdl"] = true,
         ["models/player/ntwfrosemary.mdl"] = true,
-		["models/i6nis/freddy_player.mdl"] = true,
+        ["models/i6nis/freddy_player.mdl"] = true,
         ["models/i6nis/bonnie_player.mdl"] = true,
         ["models/i6nis/chica_player.mdl"] = true,
         ["models/i6nis/foxy_player.mdl"] = true,
@@ -279,7 +279,9 @@ local VIP_MODEL_WHITELIST = {
         ["models/electric/clown/clown_pm.mdl"] = true,
         ["models/dannio/pm/bigjustice_costco.mdl"] = true,
         ["models/player/walterv2.mdl"] = true,
-	}
+        ["models/player/jessev2.mdl"] = true,
+        ["models/gustavo_fring/gustavo_los_pollos.mdl"] = true,
+    }
 
 	local function NormalizeSetModelPath(mdl)
 		mdl = string.Trim(string.lower(tostring(mdl or "")))
@@ -431,37 +433,55 @@ local VIP_MODEL_WHITELIST = {
 			ply:ChatPrint("Usage: !setmodel <model/default> OR !setmodel <player/*> <model/default>")
 			return
 		end
-		if #args > 1 and not canModerateModels then
-			ply:ChatPrint("Only moderators and above can change other players' models.")
-			return
-		end
-
 		local targets = {ply}
-		local requestedModel = args[1]
+		local requestedModel = table.concat(args, " ")
 		local allPlayers = false
-		if #args > 1 then
-			local targetName = table.concat(args, " ", 1, #args - 1)
-			requestedModel = args[#args]
-			if targetName == "*" then
-				allPlayers = true
-				targets = player.GetAll()
-			else
-				local matches = player.GetListByName(targetName)
-				local target = matches and matches[1]
-				if not IsValid(target) then
-					ply:ChatPrint("Player not found: " .. targetName)
-					return
-				end
-				targets = {target}
-			end
-		end
+        local joined = NormalizeSetModelPath(requestedModel)
+        -- A full model path (including spaces) is a self request. Only parse a
+        -- player selector when the input does not begin with a model path.
+        local selfModelPath = string.sub(joined, 1, 7) == "models/"
+        if #args > 1 and not selfModelPath then
+            -- Model paths may contain spaces after the target selector too.
+            local modelIndex = #args
+            for i = 2, #args do
+                if string.sub(NormalizeSetModelPath(args[i]), 1, 7) == "models/" then
+                    modelIndex = i
+                    break
+                end
+            end
+            local targetName = table.concat(args, " ", 1, modelIndex - 1)
+            requestedModel = table.concat(args, " ", modelIndex)
+            local selector = string.lower(string.Trim(targetName))
+            if selector == "*" then
+                if not canModerateModels then
+                    ply:ChatPrint("Only moderators and above can change other players' models. Use !setmodel <model> for yourself.")
+                    return
+                end
+                allPlayers = true
+                targets = player.GetAll()
+            elseif selector == "^" or selector == "@me" or selector == string.lower(ply:Nick()) or selector == string.lower(ply:SteamID()) or selector == ply:SteamID64() then
+                targets = {ply}
+            else
+                if not canModerateModels then
+                    ply:ChatPrint("Only moderators and above can change other players' models. Use !setmodel <model> for yourself.")
+                    return
+                end
+                local matches = player.GetListByName(targetName)
+                local target = matches and matches[1]
+                if not IsValid(target) then
+                    ply:ChatPrint("Player not found: " .. targetName)
+                    return
+                end
+                targets = {target}
+            end
+        end
 
 		local mdl = NormalizeSetModelPath(requestedModel)
 		local zcityAppearanceName
 		if mdl ~= "default" then
 			zcityAppearanceName = FindZCityAppearanceModel(mdl)
 			if not canModerateModels and not VIP_MODEL_WHITELIST[mdl] and not zcityAppearanceName then
-				ply:ChatPrint("That model is not available for non-staff players.")
+				ply:ChatPrint("That model is not in the approved self-service model list. Use an approved model or !setmodel default.")
 				return
 			end
 			local usable, reason = IsUsableZCityRagdollModel(mdl)

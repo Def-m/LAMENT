@@ -807,6 +807,12 @@ function SWEP:FireBullet()
 	bullet.Damage = bullet.Damage * (self.Supressor and 0.9 or 1) * (self.DamageMultiplier or 1)
 
 	bullet.Spread = (ammotype.Spread or self.Primary.Spread or 0) * 3
+
+	-- [JUDGE PORT] sprint-firing: spread grows with run speed, scaled by the gun's shake
+	if isply and self:IsSprinting() and self:CanSprintFire() and isnumber(bullet.Spread) then
+		local speed = owner:GetVelocity():Length2D()
+		bullet.Spread = math.max(bullet.Spread, 0.00075) * (1 + math.Clamp(speed / 220, 0, 1) * 0.28 * self:GetSprintFireShake())
+	end
 	bullet.Num = 1
 	bullet.Pellets = numbullet
 	

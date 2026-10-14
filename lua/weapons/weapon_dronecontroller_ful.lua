@@ -17,6 +17,8 @@ SWEP.WorldModel = "models/weapons/tfa_cso/w_bunkerbuster.mdl"
 SWEP.ViewModelFlip = true
 SWEP.ViewModelFOV = 80
 SWEP.HoldType = "grenade"
+SWEP.Slot = 4
+SWEP.SlotPos = 2
 SWEP.DrawAmmo = false
 SWEP.DrawCrosshair = true
 SWEP.Instructions = "LMB — launch and connect Mouse — rotate drone and flight direction W — move in camera direction S — move backward relative to camera direction A/D — move left/right E — disconnect (drone remains) E (near drone) — reconnect R — detonate drone Z — toggle flashlight"
@@ -37,6 +39,8 @@ end
 function SWEP:CanDeployDrone()
     local owner = self:GetOwner()
     if not IsValid(owner) or not owner:IsPlayer() or not owner:Alive() then return false end
+    if IsValid(owner.FakeRagdoll) or owner:InVehicle() then return false end
+    if owner.organism and owner.organism.otrub then return false end
     if self:GetNWBool("FCDroneUsed", false) then return false end
     if IsValid(owner.OwnedDrone) then return false end
     if IsValid(owner:GetNWEntity("kamikaze_")) then return false end
@@ -61,8 +65,17 @@ function SWEP:PrimaryAttack()
     owner:DoAnimationEvent(ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE)
     owner:EmitSound("kamikaze/holster.wav", 65, 100)
 
+    local function resetLaunch()
+        if IsValid(self) then self:SetNWBool("FCDroneUsed", false) end
+    end
+
     timer.Simple(0.45, function()
-        if not IsValid(self) or not IsValid(owner) or not owner:Alive() then return end
+        if not IsValid(self) or not IsValid(owner) or not owner:Alive()
+            or self:GetOwner() ~= owner or owner:GetActiveWeapon() ~= self
+            or IsValid(owner.FakeRagdoll) or (owner.organism and owner.organism.otrub) then
+            resetLaunch()
+            return
+        end
 
         local startPos = owner:GetShootPos()
         local aimDir = owner:GetAimVector()
@@ -102,6 +115,12 @@ function SWEP:PrimaryAttack()
         owner.OwnedDrone = drone
 
         local phys = drone:GetPhysicsObject()
+        if not IsValid(phys) then
+            drone:Remove()
+            resetLaunch()
+            owner:ChatPrint("Drone physics failed to initialize. Please try again.")
+            return
+        end
         if IsValid(phys) then
             phys:Wake()
             phys:SetVelocity(owner:GetVelocity() + aimDir * 280 + Vector(0, 0, 90))
@@ -111,12 +130,14 @@ function SWEP:PrimaryAttack()
         timer.Simple(0.12, function()
             if not IsValid(drone) or not IsValid(owner) or not owner:Alive() then
                 if IsValid(drone) then drone:Remove() end
+                resetLaunch()
                 return
             end
 
             if not drone.SetDriver or not drone:SetDriver(owner) then
                 drone:Remove()
-                owner:ChatPrint("Failed to connect to the drone.")
+                resetLaunch()
+                owner:ChatPrint("Failed to connect to the drone. You can try again.")
                 return
             end
 

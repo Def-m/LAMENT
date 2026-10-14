@@ -165,14 +165,31 @@ end
 if SERVER then
     util.AddNetworkString("get_svPData")
 
+    local svPData = {
+        ["Kills"] = true,
+        ["Headshots"] = true,
+        ["Suicides"] = true,
+        ["Deaths"] = true
+    }
+
     net.Receive( "get_svPData", function( len, ply )
+        if not IsValid(ply) then return end
+        if (ply.svPDataCD or 0) > CurTime() then return end
+        ply.svPDataCD = CurTime() + 1
+
         local ent = net.ReadEntity()
         local dataName = net.ReadString()
-        if not ent["Get"..dataName] then return end
+        if not IsValid(ent) or not ent:IsPlayer() then return end
+        if ent ~= ply and not ply:IsAdmin() then return end
+        if not isstring(dataName) or not svPData[dataName] then return end
+        local getter = ent["Get"..dataName]
+        if type(getter) ~= "function" then return end
+        local value = getter(ent)
+        if not isnumber(value) then return end
         net.Start("get_svPData")
             net.WriteEntity( ent )
             net.WriteString( dataName )
-            net.WriteFloat( ent["Get"..dataName] and ent["Get"..dataName](ent) or 0 )
+            net.WriteFloat( value )
         net.Send(ply)
     end)
 

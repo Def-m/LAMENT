@@ -155,6 +155,11 @@ hg.settings:AddOpt("Blood","hg_blood_draw_distance", "Blood Draw Distance")
 hg.settings:AddOpt("Blood","hg_blood_fps", "Blood FPS")
 hg.settings:AddOpt("Blood","hg_blood_sprites", "Blood Sprites (DISABLED FOR EVERYONE)")
 hg.settings:AddOpt("Blood","hg_old_blood", "Old blood")
+-- Project Hemogen (AdvancedBlood). Only shown when that addon is mounted (the row needs its convar).
+-- Off = its animated blood is cleared and Z-City / Remorse blood runs as normal.
+hg.settings.help = hg.settings.help or {}
+hg.settings.help["abl_cl_enabled"] = "Animated blood (Project Hemogen). Off = normal Z-City / Remorse blood."
+hg.settings:AddOpt("Blood","abl_cl_enabled", "Animated Blood (Hemogen)", nil, nil, "bool")
 
 hg.settings.tbl["UI"] = hg.settings.tbl["UI"] or {}
 hg.settings.tbl["UI"]["hg_font"] = nil
@@ -280,7 +285,10 @@ local info_credit_people = {
     {fallbackName = "Koi", role = "Owner", steamID64 = "76561198840745229", group = "lead"},
     {fallbackName = "Rojok", role = "Helper", steamID64 = "76561197993188046", group = "helper"},
     {fallbackName = "CAT", role = "Helper", steamID64 = "76561199401339884", group = "helper", featured = true},
-    {fallbackName = "Fizzy", role = "Helper", steamID64 = "76561199121849332", group = "helper"}
+    {fallbackName = "Fizzy", role = "Helper", steamID64 = "76561199121849332", group = "helper"},
+    {fallbackName = "zYNEX-_-", role = "Project Hemogen Creator", steamID64 = "76561199406449809", group = "Contributor"},
+    {fallbackName = "Wileyasik", role = "jUDGE Creator", steamID64 = "76561199162536724", group = "Contributor", featured = true},
+  {fallbackName = "Barry", role = "Fuckass Music Pack Creator", steamID64 = "76561199043924494", group = "Contributor"}
 }
 local info_fallback_band = {
     icon = Material("vgui/mats_jack_awards/10")
@@ -333,12 +341,6 @@ local info_social_links = {
         subtitle = "A Popular Z-City Content Creator's Community.",
         url = "https://discord.gg/SzTQAMeqa4",
         icon = Material("vgui/farten.png", "smooth")
-    },
-   {
-        title = "zergmorse (EU)",
-        subtitle = "A EU Server hosting a modified version of Chudmorse.",
-        url = "https://discord.gg/cAwPmgD7qu",
-        icon = Material("vgui/zergcredit.png", "smooth")
     }
 }
 local info_social_icon_size = MenuUnit(24)
@@ -677,7 +679,7 @@ function SettingsRefreshContent()
         help:SetPos(MenuUnit(12), MenuUnit(28))
         help:SetFont("ZCity_Menu_Settings_Tiny")
         help:SetTextColor(settings_color_text_dim)
-        help:SetText(convar:GetHelpText() or "")
+        help:SetText((hg.settings.help and hg.settings.help[convarName]) or convar:GetHelpText() or "")
         help:SizeToContents()
         help:SetWide(entryWidth - MenuUnit(220))
 
@@ -2211,8 +2213,12 @@ function InfoRefreshContent()
 
         local leads = {}
         local helpers = {}
+        local contributors = {}
         for _, person in ipairs(info_credit_people) do
-            if person.group == "helper" then
+            local group = string.lower(person.group or "lead")
+            if group == "contributor" then
+                contributors[#contributors + 1] = person
+            elseif group == "helper" then
                 helpers[#helpers + 1] = person
             else
                 leads[#leads + 1] = person
@@ -2231,6 +2237,21 @@ function InfoRefreshContent()
         helpersTitle:SetText("HELPERS")
 
         CreateCreditRow(helpers, MenuUnit(205))
+
+        local contributorsTitle = vgui.Create("DLabel", scroll)
+        contributorsTitle:Dock(TOP)
+        contributorsTitle:DockMargin(0, 0, 0, 0)
+        contributorsTitle:SetTall(MenuUnit(34))
+        contributorsTitle:SetFont("ZCity_Menu_Settings_Small")
+        contributorsTitle:SetTextColor(settings_color_whitey)
+        contributorsTitle:SetContentAlignment(5)
+        contributorsTitle:SetText("CONTRIBUTORS")
+        contributorsTitle.Paint = function(self, w, h)
+            surface.SetDrawColor(0, 0, 0, 220)
+            surface.DrawRect(0, 0, w, h)
+        end
+
+        CreateCreditRow(contributors, MenuUnit(205))
 
     elseif sectionKey == "socials" then
         local holder = vgui.Create("DPanel", info_content_panel)

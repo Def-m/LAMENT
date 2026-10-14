@@ -29,6 +29,10 @@ end)
 
 local diff = Angle()
 hook.Add("InputMouseApply", "fakeCameraAngles", function(cmd, x, y, angle)
+    -- This hook returns true below and can run before the drone's own hook.
+    -- Give the pilot's raw mouse delta to the drone before normal body camera logic.
+    if FreakCityDrone and FreakCityDrone.ApplyMouseInput
+        and FreakCityDrone.ApplyMouseInput(cmd, x, y) then return true end
 	local tbl = {}
 	local cc = GetCoolCameraBool()
 	if cc then
@@ -812,4 +816,72 @@ hook.Add("HUDPaint", "HG_WoundHoldPrompt", function()
 	end
 
 	draw.SimpleTextOutlined(woundHoldPromptText, "HGWoundHoldPrompt", ScrW() * 0.5, ScrH() - 62, color, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, outlineColor)
+end)
+
+
+-- Dedicated-server get-up restoration. Entity handles can arrive after a net
+-- message, so keep the index and wait for the matching owned weapon.
+local getupWeaponRestore
+net.Receive("ChudmorseGetupWeapon", function()
+    local token = net.ReadUInt(32)
+    if not net.ReadBool() then
+        if getupWeaponRestore and getupWeaponRestore.token == token then
+            getupWeaponRestore = nil
+        end
+        return
+    end
+    getupWeaponRestore = {
+        token = token,
+        index = net.ReadUInt(16),
+        class = net.ReadString(),
+        expires = net.ReadFloat()
+    }
+end)
+
+-- Observe actual weapon-selection input instead of a nonexistent CUserCmd getter.
+-- Do not consume the bind: the normal weapon selector must still handle it.
+hook.Add("PlayerBindPress", "ChudmorseCancelGetupWeapon", function(ply, bind, pressed)
+    if not pressed or ply ~= LocalPlayer() or not getupWeaponRestore then return end
+    bind = string.lower(string.Trim(bind or ""))
+    if not (string.match(bind, "^slot%d+$") or bind == "invnext" or bind == "invprev"
+        or bind == "lastinv" or string.match(bind, "^use%s+weapon_")) then return end
+    local token = getupWeaponRestore.token
+    getupWeaponRestore = nil
+    net.Start("ChudmorseCancelGetupWeapon")
+    net.WriteUInt(token, 32)
+    net.SendToServer()
+end)
+
+hook.Add("StartCommand", "ChudmorseRestoreGetupWeapon", function(ply, cmd)
+    local pending = getupWeaponRestore
+    if not pending or ply ~= LocalPlayer() then return end
+    if not ply:Alive() or CurTime() > pending.expires then
+        getupWeaponRestore = nil
+        return
+    end
+    -- The server clears its Lua ragdoll reference before the one-second get-up
+    -- animation. A remote client must wait for the networked state to catch up.
+    if IsValid(ply:GetNWEntity("FakeRagdoll")) or IsValid(ply.FakeRagdoll) then
+        if pending.standing then getupWeaponRestore = nil end
+        return
+    end
+    pending.standing = true
+    local wep = Entity(pending.index)
+    if not IsValid(wep) or wep:GetClass() ~= pending.class or wep:GetOwner() ~= ply then
+        -- Wait for initial replication, but never re-equip a weapon later dropped.
+        if pending.acquired then getupWeaponRestore = nil end
+        return
+    end
+    pending.acquired = true
+    if ply.organism and ply.organism.larmamputated and ply.organism.rarmamputated then
+        getupWeaponRestore = nil
+        return
+    end
+    local active = ply:GetActiveWeapon()
+    local hands = hg.GetHandsWeaponClass and hg.GetHandsWeaponClass(ply) or "weapon_hands_sh"
+    if IsValid(active) and active ~= wep and active:GetClass() ~= hands then
+        getupWeaponRestore = nil
+        return
+    end
+    if active ~= wep then cmd:SelectWeapon(wep) end
 end)

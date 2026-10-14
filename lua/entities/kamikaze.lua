@@ -390,6 +390,13 @@ function ENT:ExitDriver()
 end
 
 function ENT:OnRemove()
+    local owner = self.FCDisposableOwner
+    if IsValid(owner) and owner.OwnedDrone == self then owner.OwnedDrone = nil end
+    if CLIENT and self.WElements then
+        for _, element in pairs(self.WElements) do
+            if IsValid(element.modelEnt) then element.modelEnt:Remove() end
+        end
+    end
     if SERVER and IsValid(self:GetDriver()) then
         self:SetDriver(NULL)
     end
@@ -435,7 +442,9 @@ function ENT:Think()
 			
 			if self.InternalBattery <= 0 then
 				self:SetNWBool("Kamikaze_DeadBattery", true)
-				self.Enabled = false
+				self:Switch(false)
+                self:SetNWBool("Kamikaze_Flashlight", false)
+                self:ExitDriver()
 				if self.Sound then self.Sound:Stop() end
 			end
 		end

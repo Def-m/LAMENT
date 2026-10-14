@@ -103,19 +103,28 @@ if SERVER then
 	end)
 
 	concommand.Add("zb_getmodeschances", function(ply, cmd, args)
-		ply:zChatPrint(util.TableToJSON(zb.ModesChances, true))
+		local tbl = util.TableToJSON(zb.ModesChances or {}, true)
+
+		if IsValid(ply) then
+			if not ply:IsSuperAdmin() then return end
+			ply:zChatPrint(tbl)
+		else
+			print(tbl)
+		end
 	end)
 
 	concommand.Add("zb_setmodechance", function(ply, cmd, args)
+		if not IsValid(ply) or not ply:IsSuperAdmin() then return end
 		local mode = args[1]
 		local chance = tonumber(args[2])
 
-		if !zb.ModesChances[mode] or !chance then return end
+		if not isstring(mode) or !zb.ModesChances[mode] or !chance or chance ~= chance or math.abs(chance) == math.huge then return end
 
-		zb.ModesChances[mode] = chance
+		zb.ModesChances[mode] = math.Clamp(math.floor(chance), 0, 1000)
 	end)
 
 	concommand.Add("zb_savemodeschances", function(ply, cmd, args)
+		if not IsValid(ply) or not ply:IsSuperAdmin() then return end
 		file.Write(chancesfile, util.TableToJSON(zb.ModesChances or {}, true))
 	end)
 end

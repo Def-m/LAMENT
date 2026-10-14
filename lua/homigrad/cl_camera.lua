@@ -302,6 +302,11 @@ local hg_coolcamera = ConVarExists("hg_coolcamera") and GetConVar("hg_coolcamera
 
 CalcView = function(ply, origin, angles, fov, znear, zfar)
 	if g_VR and g_VR.active then return end
+	-- RenderScene calls this function directly, bypassing ordinary CalcView hooks.
+	if FreakCityDrone and FreakCityDrone.BuildView then
+		local droneView = FreakCityDrone.BuildView(ply, origin, angles, fov, znear, zfar)
+		if droneView then return droneView end
+	end
 	if GetViewEntity() ~= (ply or LocalPlayer()) then return end
 
 	local view = {

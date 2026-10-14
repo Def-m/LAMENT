@@ -157,7 +157,7 @@ local RoleConfigs = {
             ["assassin"] = {cost = 15, name = "Assassin", desc = "Better gun control and more endurance."},
             ["damned"] = {cost = 30, name = "Damned", desc = "You start with nothing."},
             ["chemist"] = {cost = 10, name = "Chemist", desc = "Detect chemicals in the air."},
-            ["fox"] = {cost = 5, name = "The Fox", desc = "Hear a warning and track the source while someone is calling the police."}
+            ["fox"] = {cost = 10, name = "Technician", desc = "Track police calls. Use the Hack Tablet to shock phones and activate map traps."}
   },
         items = {
 		    ["weapon_pm9"] = {cost = 12, name = "PM9 Evil Gun"},
