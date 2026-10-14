@@ -1526,6 +1526,14 @@ local function OpenHomicideMenu(rootPanel)
 			accent = Color(142, 62, 190),
             align = "left"
         },
+		{
+			roleId = "bystander",
+			title = "BYSTANDER",
+			desc = "Configure the Bystander loadout",
+			points = "8 POINTS",
+			accent = Color(25,102,255)
+			align = "middle"
+		},
         {
             roleId = "traitor",
             title = "EXECUTIONER",
