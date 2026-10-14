@@ -324,7 +324,7 @@ local RoleConfigs = {
 				}
 			},
 			{
-				name = "Cook"
+				name = "Cook",
 				loadout = {
 					skillset = "cook",
 					weapons = {
@@ -335,7 +335,7 @@ local RoleConfigs = {
 				}
 			},
 			{
-				name = "doctor"
+				name = "doctor",
 				loadout = {
 					skillset = "doctor",
 					weapons = {
