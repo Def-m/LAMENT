@@ -310,11 +310,16 @@ local RoleConfigs = {
 			["weapon_medkit_sh"] = {cost = 2, name = "MedKit"},
 			["weapon_painkillers_tpik"] = {cost = 2, name = "Painkillers"},
 			["weapon_morphine"] = {cost = 2, name = "Morphine"},
-			["weapon_switchblade"] = {cost = 3, name = "SwitchBlade"}
+			["weapon_switchblade"] = {cost = 3, name = "SwitchBlade"},
+			["weapon_hammer"] = {cost = 4, name = "Hammer"}
 		},
-		addons = {},
-		addonOrder = {},
-		exclusions = {},
+		addons = {
+			["weapon_hammer_ammo"] = {cost = 1, name = "Extra Nails", parent = "weapon_hammer", desc = "Start with extra Nails."}
+		},
+		addonOrder = {
+			["weapon_hammer"] = {"weapon_hammer_ammo"}
+		},
+		exclusions = {}
 		defaultPresets = {
 		{
 				name = "Unemployed Chud",
