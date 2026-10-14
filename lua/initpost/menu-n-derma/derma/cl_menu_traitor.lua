@@ -306,7 +306,7 @@ local RoleConfigs = {
 			["weapon_matches"] = {cost = 1, name = "Matches"},
 			["weapon_bigconsumable"] = {cost = 1, name = "large consumable"},
 			["weapon_smallconsumable"] = {cost = 1, name = "Small consumable"},
-			["weapon_bandage_sh"] = {cost = 2 name = "Bandage"},
+			["weapon_bandage_sh"] = {cost = 2, name = "Bandage"},
 			["weapon_medkit_sh"] = {cost = 2, name = "MedKit"},
 			["weapon_painkillers_tpik"] = {cost = 2, name = "Painkillers"},
 			["weapon_morphine"] = {cost = 2, name = "Morphine"},
