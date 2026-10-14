@@ -1,4 +1,4 @@
-***Chudmorse version 3 chudoween***
+***Chudmorse version 3.5***
 
 https://steamcommunity.com/sharedfiles/filedetails/?id=3793275026
 
