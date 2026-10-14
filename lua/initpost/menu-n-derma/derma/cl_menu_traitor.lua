@@ -2495,7 +2495,7 @@ function hg.DrawLoadoutMenu(parentPanel)
     local totalW = ScrW() * 0.82
     local cardW = (totalW - gap) * 0.5
     local cardH = ScrH() * 0.55
-	AddModeCard(parentPanel, x, y, cardW, cardH, "HOMICIDE", "2 LOADOUTS", "Judge and Executioner", "left", function() OpenHomicideMenu(parentPanel) end)
+	AddModeCard(parentPanel, x, y, cardW, cardH, "HOMICIDE", "3 LOADOUTS", "Judge and Executioner", "left", function() OpenHomicideMenu(parentPanel) end)
 	AddModeCard(parentPanel, x + cardW + gap, y, cardW, cardH, "ARENA", "50 META WEIGHT", "Weapons, armor, medical", "right", function() OpenArenaEditor(parentPanel) end)
 
     local back = vgui.Create("DLabel", parentPanel)
