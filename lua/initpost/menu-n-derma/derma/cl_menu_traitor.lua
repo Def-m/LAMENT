@@ -158,6 +158,7 @@ end
 
 CreateClientConVar("hmcd_traitor_loadout", "", true, true, "Saved traitor loadout")
 CreateClientConVar("hmcd_hero_loadout", "", true, true, "Saved hero loadout")
+CreateClientConVar("hmcd_bystander_loadout", "", true, true, "Saved Bystander Loadout")
 CreateClientConVar("zcity_arena_loadout", "", true, true, "Saved Arena loadout")
 
 function SkillsetBlocksGun(config, skillset, id)
@@ -172,8 +173,8 @@ end
 
 local RoleConfigs = {
     traitor = {
-        title = "EXECUTIONER",
-        buttonTitle = "Executioner",
+        title = "TRAITOR",
+        buttonTitle = "Traitor",
         maxPoints = 30,
         convar = "hmcd_traitor_loadout",
         saveFile = "zcity_traitor_loadout.txt",
@@ -286,9 +287,68 @@ local RoleConfigs = {
             }
         }
     },
+	bystander = {
+		title = "BYSTANDER",
+		buttonTitle = "Bystander",
+		maxPoints 8,
+		convar = "hmcd_bystander_loadout",
+		saveFile = "zcity_bystander_loadout.txt"
+		presetFile = "zcity_bystander_presets.txt"
+		skillsets = {
+			["none"] = {cost = 0, name = "None", desc = "You have no profession. You are unemployed."},
+			["cook"] = {cost = 2, name = "Cook", desc = "You have taken a Profession in Cooking, you can associate the smell of almonds with cyanide."},
+			["huntsman"] = {cost 4, name = "Huntsman", desc = "You tend to hunt a lot. You can track footsteps of others."},
+		    ["engineer"] = {cost 3, name = "Engineer", desc = "You have a career in Engineering. You have the ability to combine items into one."},
+			["doctor"] = {cost 4, name = "Doctor", desc = "You are skilled in the medical field. You know how to relocate bones and you use less resources."}
+		},
+		items = {
+			["weapon_ducttape"] {cost 1, name = "Duct Tape"},
+			["weapon_matches"] {cost 1, name = "Matches"},
+			["weapon_bigconsumable"] {cost 1, name = "large consumable"},
+			["weapon_smallconsumable"] {cost 1, name = "Small consumable"},
+			["weapon_bandage_sh"] {cost 2 name = "Bandage"},
+			["weapon_medkit_sh"] {cost 2, name = "MedKit"},
+			["weapon_painkillers_tpik"] {cost 2, name = "Painkillers"},
+			["weapon_morphine"] {cost 2, name = "Morphine"},
+			["weapon_switchblade"] {cost 3, name = "SwitchBlade"}
+		},
+		defaultPresets = {
+		{
+				name = "Unemployed Chud",
+				loadout = {
+					skillset = "none" 
+					weapons = {
+						"weapon_bigconsumable"
+						"weapon_smallconsumable"
+					}
+				}
+			},
+			{
+				name = "Cook"
+				loadout = {
+					skillset = "cook"
+					weapons = {
+						"weapon_bigconsumable"
+						"weapon_smallconsumable"
+						"weapon_matches"
+					}
+				}
+			},
+			{
+				name = "doctor"
+				loadout = {
+					skillset = "doctor"
+					weapons = {
+						"weapon_medkit_sh"
+						"weapon_morphine"
+					}
+				}
+			}
+		}
+	},		
     hero = {
-        title = "JUDGE",
-        buttonTitle = "Judge",
+        title = "VIGILANTE",
+        buttonTitle = "Vigilante",
         maxPoints = 16,
         convar = "hmcd_hero_loadout",
         saveFile = "zcity_hero_loadout.txt",
