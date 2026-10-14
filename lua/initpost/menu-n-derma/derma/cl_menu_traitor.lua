@@ -312,6 +312,12 @@ local RoleConfigs = {
 			["weapon_morphine"] = {cost = 2, name = "Morphine"},
 			["weapon_switchblade"] = {cost = 3, name = "SwitchBlade"}
 		},
+		addons = {
+		},
+		addonOrder = {
+		},
+		exclusions {
+		},
 		defaultPresets = {
 		{
 				name = "Unemployed Chud",
