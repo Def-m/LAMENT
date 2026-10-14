@@ -290,10 +290,10 @@ local RoleConfigs = {
 	bystander = {
 		title = "BYSTANDER",
 		buttonTitle = "Bystander",
-		maxPoints 8,
+		maxPoints = 8,
 		convar = "hmcd_bystander_loadout",
-		saveFile = "zcity_bystander_loadout.txt"
-		presetFile = "zcity_bystander_presets.txt"
+		saveFile = "zcity_bystander_loadout.txt",
+		presetFile = "zcity_bystander_presets.txt",
 		skillsets = {
 			["none"] = {cost = 0, name = "None", desc = "You have no profession. You are unemployed."},
 			["cook"] = {cost = 2, name = "Cook", desc = "You have taken a Profession in Cooking, you can associate the smell of almonds with cyanide."},
@@ -302,23 +302,23 @@ local RoleConfigs = {
 			["doctor"] = {cost 4, name = "Doctor", desc = "You are skilled in the medical field. You know how to relocate bones and you use less resources."}
 		},
 		items = {
-			["weapon_ducttape"] {cost 1, name = "Duct Tape"},
-			["weapon_matches"] {cost 1, name = "Matches"},
-			["weapon_bigconsumable"] {cost 1, name = "large consumable"},
-			["weapon_smallconsumable"] {cost 1, name = "Small consumable"},
-			["weapon_bandage_sh"] {cost 2 name = "Bandage"},
-			["weapon_medkit_sh"] {cost 2, name = "MedKit"},
-			["weapon_painkillers_tpik"] {cost 2, name = "Painkillers"},
-			["weapon_morphine"] {cost 2, name = "Morphine"},
-			["weapon_switchblade"] {cost 3, name = "SwitchBlade"}
+			["weapon_ducttape"] {cost = 1, name = "Duct Tape"},
+			["weapon_matches"] {cost = 1, name = "Matches"},
+			["weapon_bigconsumable"] {cost = 1, name = "large consumable"},
+			["weapon_smallconsumable"] {cost = 1, name = "Small consumable"},
+			["weapon_bandage_sh"] {cost = 2 name = "Bandage"},
+			["weapon_medkit_sh"] {cost = 2, name = "MedKit"},
+			["weapon_painkillers_tpik"] {cost = 2, name = "Painkillers"},
+			["weapon_morphine"] {cost = 2, name = "Morphine"},
+			["weapon_switchblade"] {cost = 3, name = "SwitchBlade"}
 		},
 		defaultPresets = {
 		{
 				name = "Unemployed Chud",
 				loadout = {
-					skillset = "none" 
+					skillset = "none" ,
 					weapons = {
-						"weapon_bigconsumable"
+						"weapon_bigconsumable",
 						"weapon_smallconsumable"
 					}
 				}
@@ -326,10 +326,10 @@ local RoleConfigs = {
 			{
 				name = "Cook"
 				loadout = {
-					skillset = "cook"
+					skillset = "cook",
 					weapons = {
-						"weapon_bigconsumable"
-						"weapon_smallconsumable"
+						"weapon_bigconsumable",
+						"weapon_smallconsumable",
 						"weapon_matches"
 					}
 				}
@@ -337,9 +337,9 @@ local RoleConfigs = {
 			{
 				name = "doctor"
 				loadout = {
-					skillset = "doctor"
+					skillset = "doctor",
 					weapons = {
-						"weapon_medkit_sh"
+						"weapon_medkit_sh",
 						"weapon_morphine"
 					}
 				}
