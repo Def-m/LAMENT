@@ -319,7 +319,7 @@ local RoleConfigs = {
 		addonOrder = {
 			["weapon_hammer"] = {"weapon_hammer_ammo"}
 		},
-		exclusions = {}
+		exclusions = {},
 		defaultPresets = {
 		{
 				name = "Unemployed Chud",
