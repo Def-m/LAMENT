@@ -1518,7 +1518,7 @@ local function OpenHomicideMenu(rootPanel)
     local cardAreaY = sh * 0.22
     local cardAreaW = sw * 0.78
     local cardAreaH = sh * 0.58
-    local cardWidth = cardAreaW * 0.47
+    local cardWidth = cardAreaW * 0.33
     local cardHeight = cardAreaH
     local cardOffscreenOffset = MenuUnit(80)
     local cardHoverScale = 1.035
