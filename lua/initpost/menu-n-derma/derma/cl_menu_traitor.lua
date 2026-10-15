@@ -1529,8 +1529,8 @@ local function OpenHomicideMenu(rootPanel)
     local cardData = {
         {
             roleId = "hero",
-            title = "JUDGE",
-            desc = "Configure the Judge loadout",
+            title = "VIGILANTE",
+            desc = "Create Your Vigilante.",
             points = "16 POINTS",
 			accent = Color(142, 62, 190),
             align = "left"
@@ -1538,15 +1538,15 @@ local function OpenHomicideMenu(rootPanel)
 		{
 			roleId = "bystander",
 			title = "BYSTANDER",
-			desc = "Configure the Bystander loadout",
+			desc = "Create Your Bystander.",
 			points = "8 POINTS",
 			accent = Color(25,102,255),
 			align = "bottom"
 		},
         {
             roleId = "traitor",
-            title = "EXECUTIONER",
-            desc = "Configure the Executioner loadout",
+            title = "TRAITOR",
+            desc = "Create Your Traitor.",
             points = "30 POINTS",
 			accent = Color(190, 42, 42),
             align = "right"
@@ -1569,11 +1569,11 @@ local function OpenHomicideMenu(rootPanel)
 
 if info.align == "left" then
     card.TargetX = cardAreaX
-    card:SetPos(-card.BaseW - cardOffscreenOffset, card.TargetY) -- slide in from left
+    card:SetPos(-card.BaseW - cardOffscreenOffset, card.TargetY)
 elseif info.align == "right" then
     card.TargetX = cardAreaX + cardAreaW - card.BaseW
-    card:SetPos(sw + cardOffscreenOffset, card.TargetY) -- slide in from right
-else -- "middle"
+    card:SetPos(sw + cardOffscreenOffset, card.TargetY)
+else
     card.TargetX = midX
 end
         card.Think = function(self)
