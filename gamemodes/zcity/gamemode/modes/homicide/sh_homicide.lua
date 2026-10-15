@@ -191,12 +191,6 @@ local function ApplyTraitorLoadout(ply)
 	end
 end
 
-local function ApplyInnocentLoadout(ply)
-	local loadout = ParseLoadoutString(ply:GetInfo("hmcd_innocent_loadout"))
-	local weaponsList = istable(loadout.weapons) and loadout.weapons or {}
-    end
-end
-
 local function ApplyHeroLoadout(ply)
 	local loadout = ParseLoadoutString(ply:GetInfo("hmcd_hero_loadout"))
 	local weaponsList = istable(loadout.weapons) and loadout.weapons or {}
