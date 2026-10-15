@@ -158,7 +158,7 @@ end
 
 CreateClientConVar("hmcd_traitor_loadout", "", true, true, "Saved traitor loadout")
 CreateClientConVar("hmcd_hero_loadout", "", true, true, "Saved hero loadout")
-CreateClientConVar("hmcd_bystander_loadout", "", true, true, "Saved Bystander Loadout")
+CreateClientConVar("hmcd_innocent_loadout", "", true, true, "Saved Bystander Loadout")
 CreateClientConVar("zcity_arena_loadout", "", true, true, "Saved Arena loadout")
 
 function SkillsetBlocksGun(config, skillset, id)
@@ -288,12 +288,12 @@ local RoleConfigs = {
         }
     },
 	bystander = {
-		title = "BYSTANDER",
-		buttonTitle = "Bystander",
+		title = "INNOCENT",
+		buttonTitle = "innocent",
 		maxPoints = 8,
-		convar = "hmcd_bystander_loadout",
-		saveFile = "zcity_bystander_loadout.txt",
-		presetFile = "zcity_bystander_presets.txt",
+		convar = "hmcd_innocent_loadout",
+		saveFile = "zcity_innocent_loadout.txt",
+		presetFile = "zcity_innocent_presets.txt",
 		skillsets = {
 			["none"] = {cost = 0, name = "None", desc = "You have no profession. You are unemployed."},
 			["cook"] = {cost = 2, name = "Cook", desc = "You have taken a Profession in Cooking, you can associate the smell of almonds with cyanide."},
@@ -311,8 +311,8 @@ local RoleConfigs = {
 			["weapon_medkit_sh"] = {cost = 2, name = "MedKit"},
 			["weapon_painkillers_tpik"] = {cost = 2, name = "Painkillers"},
 			["weapon_morphine"] = {cost = 2, name = "Morphine"},
-			["weapon_switchblade"] = {cost = 3, name = "SwitchBlade"},
-			["weapon_hammer"] = {cost = 4, name = "Hammer"}
+			["weapon_switchblade"] = {cost = 4, name = "SwitchBlade"},
+			["weapon_hammer"] = {cost = 6, name = "Hammer"}
 		},
 		addons = {
 			["weapon_hammer_ammo"] = {cost = 1, name = "Extra Nails", parent = "weapon_hammer", desc = "Start with extra Nails."}
@@ -1536,9 +1536,9 @@ local function OpenHomicideMenu(rootPanel)
             align = "left"
         },
 		{
-			roleId = "bystander",
-			title = "BYSTANDER",
-			desc = "Create Your Bystander.",
+			roleId = "innocent",
+			title = "VICTIM",
+			desc = "Create Your Victim.",
 			points = "8 POINTS",
 			accent = Color(25,102,255),
 			align = "bottom"
@@ -2515,7 +2515,7 @@ function hg.DrawLoadoutMenu(parentPanel)
     local totalW = ScrW() * 0.82
     local cardW = (totalW - gap) * 0.5
     local cardH = ScrH() * 0.55
-	AddModeCard(parentPanel, x, y, cardW, cardH, "HOMICIDE", "3 LOADOUTS", "Judge and Executioner", "left", function() OpenHomicideMenu(parentPanel) end)
+	AddModeCard(parentPanel, x, y, cardW, cardH, "HOMICIDE", "3 LOADOUTS", "Viglante, Victim, Traitor", "left", function() OpenHomicideMenu(parentPanel) end)
 	AddModeCard(parentPanel, x + cardW + gap, y, cardW, cardH, "ARENA", "50 META WEIGHT", "Weapons, armor, medical", "right", function() OpenArenaEditor(parentPanel) end)
 
     local back = vgui.Create("DLabel", parentPanel)
