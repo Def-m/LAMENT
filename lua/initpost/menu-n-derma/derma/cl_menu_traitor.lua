@@ -1565,6 +1565,17 @@ local function OpenHomicideMenu(rootPanel)
         card.TargetX = info.align == "left" and cardAreaX or cardAreaX + cardAreaW - card.BaseW
         card.TargetY = cardAreaY
         card:SetPos(info.align == "left" and -card.BaseW - cardOffscreenOffset or sw + cardOffscreenOffset, card.TargetY)
+		local midX = cardAreaX + (cardAreaW - card.BaseW) * 0.5
+
+if info.align == "left" then
+    card.TargetX = cardAreaX
+    card:SetPos(-card.BaseW - cardOffscreenOffset, card.TargetY) -- slide in from left
+elseif info.align == "right" then
+    card.TargetX = cardAreaX + cardAreaW - card.BaseW
+    card:SetPos(sw + cardOffscreenOffset, card.TargetY) -- slide in from right
+else -- "middle"
+    card.TargetX = midX
+end
         card.Think = function(self)
             self.HoveredLerp = LerpFT(0.2, self.HoveredLerp or 0, self:IsHovered() and 1 or 0)
             self.AppearLerp = math.Clamp((CurTime() - self.StartTime) / 0.28, 0, 1)
