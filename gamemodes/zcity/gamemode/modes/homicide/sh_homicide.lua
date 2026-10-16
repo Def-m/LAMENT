@@ -269,6 +269,104 @@ local function ApplyHeroLoadout(ply)
 	end
 end
 
+-- Innocent loadout (add to sh_homicide.lua)
+local LegacyInnocentLoadout = {
+	skillset = "none",
+	weapons = {
+		"weapon_hands",
+	}
+}
+
+local function ApplyInnocentLoadout(ply)
+	-- Parse player's preferred innocent loadout (JSON string from client ConVar)
+	local loadout = ParseLoadoutString(ply:GetInfo("hmcd_innocent_loadout"))
+	if not loadout or (not loadout.weapons or not istable(loadout.weapons)) then
+		loadout = LegacyInnocentLoadout
+	end
+
+	-- Reset/ensure sane organism defaults for innocents
+	ply.organism.stamina.max = ply.organism.stamina.max or 200
+	ply.organism.recoilmul = 1
+	ply.MeleeDamageMul = ply.MeleeDamageMul or nil
+
+	-- Ensure flashlight in inventory (common baseline)
+	local inv = ply:GetNetVar("Inventory", {})
+	inv["Weapons"] = inv["Weapons"] or {}
+	inv["Weapons"]["hg_flashlight"] = false
+	ply:SetNetVar("Inventory", inv)
+
+	-- Give weapons/armor/tools listed in the loadout
+	local weaponsList = loadout.weapons or {}
+	local attachments = {}
+
+	for _, wep_id in ipairs(weaponsList) do
+		-- Armor entities: ent_armor_*
+		if string.StartWith(wep_id, "ent_armor_") then
+			if hg and hg.AddArmor then
+				hg.AddArmor(ply, wep_id)
+			end
+
+		-- Walkie / tools
+		elseif wep_id == "weapon_hands" then
+			ply:Give("weapon_hands")
+
+		-- Ammo upgrade tokens (pattern like "weapon_xxx_ammo")
+		elseif string.EndsWith(wep_id, "_ammo") then
+			-- derive base weapon name by trimming suffix (e.g. "weapon_px4_ammo" -> "weapon_px4")
+			local base = string.gsub(wep_id, "_ammo$", "")
+			if ply:HasWeapon(base) then
+				local w = ply:GetWeapon(base)
+				if IsValid(w) and w:GetPrimaryAmmoType() >= 0 then
+					ply:GiveAmmo(w:GetMaxClip1(), w:GetPrimaryAmmoType(), true)
+				end
+			else
+				-- if weapon not yet given, try to give ammo for primary weapon class later using a timer
+				timer.Simple(0.5, function()
+					if not IsValid(ply) then return end
+					local w = ply:GetWeapon(base)
+					if IsValid(w) and w:GetPrimaryAmmoType() >= 0 then
+						ply:GiveAmmo(w:GetMaxClip1(), w:GetPrimaryAmmoType(), true)
+					end
+				end)
+			end
+
+		-- Attachments tokens (pattern like "weapon_xxx_scope" or explicit mapping)
+		elseif string.find(wep_id, "scope") or string.find(wep_id, "supressor") or string.find(wep_id, "rmr") or string.find(wep_id, "laser") then
+			-- collect attachment IDs and try to apply them to any equipped weapon of matching parent later
+			attachments[#attachments + 1] = wep_id
+
+		-- Give actual weapon
+		else
+			local w = ply:Give(wep_id)
+			-- If the weapon applies special startup ammo changes when spawned (pattern seen in file), handle with a small delay
+			if IsValid(w) and w:GetClass() == "weapon_zoraki" then
+				timer.Simple(1, function() if IsValid(w) then w:ApplyAmmoChanges(2) end end)
+			end
+		end
+	end
+
+	-- Apply attachments after weapons are present
+	if #attachments > 0 then
+		timer.Simple(0.5, function()
+			if not IsValid(ply) then return end
+			for _, att in ipairs(attachments) do
+				-- naive: try to apply att to player's active weapon and other weapons if needed;
+				-- if you have a mapping (like HeroUpgradeData) reuse that instead.
+				for _, wep in ipairs(ply:GetWeapons()) do
+					if IsValid(wep) and istable(wep.attachments) and hg and hg.SetAttachment then
+						-- if att is a token like "supressor1" then apply directly
+						hg.SetAttachment(wep.attachments, att, wep:GetClass())
+						if wep.UpdateAttachmentModifiers then wep:UpdateAttachmentModifiers() end
+						if wep.SyncAtts then wep:SyncAtts() end
+					end
+				end
+			end
+		end)
+	end
+end
+
+-- Expose on MODE so other code can call it
+MODE.ApplyInnocentLoadout = ApplyInnocentLoadout
 MODE.ApplyTraitorLoadout = ApplyTraitorLoadout
 MODE.ApplyHeroLoadout = ApplyHeroLoadout
 
