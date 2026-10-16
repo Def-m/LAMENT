@@ -288,8 +288,8 @@ local RoleConfigs = {
         }
     },
 	bystander = {
-		title = "INNOCENT",
-		buttonTitle = "innocent",
+		title = "BYSTANDER",
+		buttonTitle = "bystander",
 		maxPoints = 8,
 		convar = "hmcd_innocent_loadout",
 		saveFile = "zcity_innocent_loadout.txt",
@@ -1536,7 +1536,7 @@ local function OpenHomicideMenu(rootPanel)
             align = "left"
         },
 		{
-			roleId = "innocent",
+			roleId = "bystander",
 			title = "VICTIM",
 			desc = "Create Your Victim.",
 			points = "8 POINTS",
