@@ -294,28 +294,20 @@ local RoleConfigs = {
 		convar = "hmcd_innocent_loadout",
 		saveFile = "zcity_innocent_loadout.txt",
 		presetFile = "zcity_innocent_presets.txt",
-		skillsets = {
-			["none"] = {cost = 0, name = "None", desc = "You have no profession. You are unemployed."},
-			["cook"] = {cost = 2, name = "Cook", desc = "You have taken a Profession in Cooking, you can associate the smell of almonds with cyanide."},
-			["huntsman"] = {cost = 4, name = "Huntsman", desc = "You tend to hunt a lot. You can track footsteps of others."},
-		    ["engineer"] = {cost = 3, name = "Engineer", desc = "You have a career in Engineering. You have the ability to combine items into one."},
-			["doctor"] = {cost = 4, name = "Doctor", desc = "You are skilled in the medical field. You know how to relocate bones and you use less resources."},
-			["reporter"] = {cost = 6, name = "Reporter", desc = "You have gone out of your way to report this situation live, you have a vest to protect yourself."}
-		},
 		items = {
-			["weapon_ducttape"] = {cost = 1, name = "Duct Tape"},
-			["weapon_matches"] = {cost = 1, name = "Matches"},
-			["weapon_bigconsumable"] = {cost = 1, name = "large consumable"},
-			["weapon_smallconsumable"] = {cost = 1, name = "Small consumable"},
-			["weapon_bandage_sh"] = {cost = 2, name = "Bandage"},
-			["weapon_medkit_sh"] = {cost = 2, name = "MedKit"},
-			["weapon_painkillers_tpik"] = {cost = 2, name = "Painkillers"},
-			["weapon_morphine"] = {cost = 2, name = "Morphine"},
-			["weapon_switchblade"] = {cost = 4, name = "SwitchBlade"},
+			["weapon_ducttape"] = {cost = 4, name = "Duct Tape"},
+			["weapon_matches"] = {cost = 4, name = "Matches"},
+			["weapon_bigconsumable"] = {cost = 2, name = "large consumable"},
+			["weapon_smallconsumable"] = {cost = 2, name = "Small consumable"},
+			["weapon_bandage_sh"] = {cost = 4, name = "Bandage"},
+			["weapon_medkit_sh"] = {cost = 6, name = "MedKit"},
+			["weapon_painkillers_tpik"] = {cost = 4, name = "Painkillers"},
+			["weapon_morphine"] = {cost = 6, name = "Morphine"},
+			["weapon_switchblade"] = {cost = 6, name = "SwitchBlade"},
 			["weapon_hammer"] = {cost = 6, name = "Hammer"}
 		},
 		addons = {
-			["weapon_hammer_ammo"] = {cost = 1, name = "Extra Nails", parent = "weapon_hammer", desc = "Start with extra Nails."}
+			["weapon_hammer_ammo"] = {cost = 2, name = "Extra Nails", parent = "weapon_hammer", desc = "Start with extra Nails."}
 		},
 		addonOrder = {
 			["weapon_hammer"] = {"weapon_hammer_ammo"}
@@ -335,7 +327,6 @@ local RoleConfigs = {
 			{
 				name = "Cook",
 				loadout = {
-					skillset = "cook",
 					weapons = {
 						"weapon_bigconsumable",
 						"weapon_smallconsumable",
@@ -346,10 +337,9 @@ local RoleConfigs = {
 			{
 				name = "doctor",
 				loadout = {
-					skillset = "doctor",
 					weapons = {
-						"weapon_medkit_sh",
-						"weapon_morphine"
+						"weapon_painkillers_tpik",
+						"weapon_bandage"
 					}
 				}
 			}
