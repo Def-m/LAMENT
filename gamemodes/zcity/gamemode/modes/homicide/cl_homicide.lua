@@ -45,7 +45,7 @@ net.Receive("HMCD_RoundBeginSound", function()
 end)
 
 local fade = 0
-local HMCD_ScreenDuration = 10
+local HMCD_ScreenDuration = 7
 local hmcd_show_associates
 local hmcd_clear_associates
 net.Receive("HMCD_RoundStart",function()
@@ -639,6 +639,40 @@ if lply:Team() == TEAM_SPECTATOR then return end
 	end
 
 	add(Objective, "ZB_HomicideMedium", Color(255, 255, 255), sw * 0.5, sh * 0.9, "bottom", 1.4, 1.3, true)
+
+	-- new round commence screen (gamemode/libraries/cl_roundstart.lua)
+	if hg.RoundIntro and hg.RoundIntro.Sync then
+		local extra, occupation = {}, nil
+		local afterRole = false
+		for i, el in ipairs(elements) do
+			if el.text == "You are " .. Rolename then
+				afterRole = true
+			elseif afterRole and i < #elements then
+				if string.StartWith(el.text, "Occupation: ") then
+					occupation = string.sub(el.text, 13)
+				else
+					extra[#extra + 1] = { text = el.text, color = Color(el.r, el.g, el.b) }
+				end
+			end
+		end
+
+		local pose = lply.isTraitor and "armed" or (lply.isGunner and "salute") or "scared"
+
+		hg.RoundIntro.Sync({
+			key = StartTime,
+			startTime = StartTime,
+			duration = HMCD_ScreenDuration,
+			mode = roundName,
+			submode = variantName,
+			role = MODE.RoleEndedChosingState and Rolename or nil,
+			roleColor = ColorRole,
+			occupation = occupation,
+			extra = extra,
+			objective = Objective,
+			pose = pose,
+		})
+		return
+	end
 
 	local tilts = MODE.RoundTextTilts or {}
 

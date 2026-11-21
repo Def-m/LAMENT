@@ -19,6 +19,42 @@ MODE.LootDivTime = 500
 MODE.SingleModeStrongLootCategoryMul = 0.35
 MODE.SingleModeStrongLootItemMul = 0.45
 
+-- less-lethal sidearm: 45% taser, 55% Remington 870 loaded with beanbags
+local function GiveLessLethal(ply, extraClips)
+	extraClips = extraClips or 1
+	if math.random() < 0.45 then
+		local taser = ply:Give("weapon_taser")
+		if IsValid(taser) and taser:GetPrimaryAmmoType() >= 0 then
+			ply:GiveAmmo(taser:GetMaxClip1() * extraClips, taser:GetPrimaryAmmoType(), true)
+		end
+		return taser
+	end
+
+	local shotgun = ply:Give("weapon_remington870")
+	if not IsValid(shotgun) then return end
+
+	local inv = ply:GetNetVar("Inventory", {}) or {}
+	inv["Weapons"] = inv["Weapons"] or {}
+	inv["Weapons"]["hg_sling"] = true
+	ply:SetNetVar("Inventory", inv)
+
+	-- the weapon resets itself to buckshot 0.1s after init, so switch after that
+	timer.Simple(0.3, function()
+		if not IsValid(shotgun) then return end
+		if shotgun.ApplyAmmoChanges and shotgun.AmmoTypes then
+			shotgun:ApplyAmmoChanges(2) -- AmmoTypes2["12/70 gauge"][2] = "12/70 beanbag"
+		else
+			shotgun.Primary.Ammo = "12/70 beanbag"
+		end
+		shotgun:SetClip1(shotgun:GetMaxClip1())
+		if IsValid(ply) then
+			ply:GiveAmmo(shotgun:GetMaxClip1() * extraClips, "12/70 beanbag", true)
+		end
+	end)
+
+	return shotgun
+end
+
 local function ScaleLootTable(lootTable, categoryMul, itemMul)
 	local scaled = {}
 
@@ -382,12 +418,12 @@ MODE.Types.standard = {
 		ply:SetPlayerClass("police")
 		local glock = ply:Give("weapon_glock17")
 		ply:GiveAmmo(glock:GetMaxClip1() * 3,glock:GetPrimaryAmmoType(),true)
-		if math.random(0,1) then
-			hg.AddAttachmentForce(ply,gun,"holo16")
+		if math.random(0,1) == 1 then
+			hg.AddAttachmentForce(ply,glock,"holo16")
 		end
 
-		if math.random(0,1) then
-			hg.AddAttachmentForce(ply,gun,"laser3")
+		if math.random(0,1) == 1 then
+			hg.AddAttachmentForce(ply,glock,"laser3")
 		end
 
 		ply:Give("weapon_medkit_sh")
@@ -398,8 +434,7 @@ MODE.Types.standard = {
 		ply:Give("weapon_handcuffs_key")
 		ply:Give("weapon_hg_tonfa")
 		
-		local gun = ply:Give("weapon_taser")
-		ply:GiveAmmo(gun:GetMaxClip1() * 3,gun:GetPrimaryAmmoType(),true)
+		GiveLessLethal(ply, 3)
 
 		hg.AddArmor(ply, {"vest2"})
 
@@ -516,12 +551,12 @@ MODE.Types.wildwest = {
 		ply:SetPlayerClass("police")
 		local glock = ply:Give("weapon_glock17")
 		ply:GiveAmmo(glock:GetMaxClip1() * 3,glock:GetPrimaryAmmoType(),true)
-		if math.random(0,1) then
-			hg.AddAttachmentForce(ply,gun,"holo16")
+		if math.random(0,1) == 1 then
+			hg.AddAttachmentForce(ply,glock,"holo16")
 		end
 
-		if math.random(0,1) then
-			hg.AddAttachmentForce(ply,gun,"laser3")
+		if math.random(0,1) == 1 then
+			hg.AddAttachmentForce(ply,glock,"laser3")
 		end
 
 		ply:Give("weapon_medkit_sh")
@@ -532,8 +567,7 @@ MODE.Types.wildwest = {
 		ply:Give("weapon_handcuffs_key")
 		ply:Give("weapon_hg_tonfa")
 
-		local gun = ply:Give("weapon_taser")
-		ply:GiveAmmo(gun:GetMaxClip1() * 3,gun:GetPrimaryAmmoType(),true)
+		GiveLessLethal(ply, 3)
 
 		hg.AddArmor(ply, {"vest2"})
 
@@ -591,11 +625,11 @@ MODE.Types.gunfreezone = {
 		ply:SetPlayerClass("police")
 		local glock = ply:Give("weapon_glock17")
 		ply:GiveAmmo(glock:GetMaxClip1() * 3,glock:GetPrimaryAmmoType(),true)
-		if math.random(0,1) then
+		if math.random(0,1) == 1 then
 			hg.AddAttachmentForce(ply,glock,"holo16")
 		end
 
-		if math.random(0,1) then
+		if math.random(0,1) == 1 then
 			hg.AddAttachmentForce(ply,glock,"laser3")
 		end
 
@@ -607,8 +641,7 @@ MODE.Types.gunfreezone = {
 		ply:Give("weapon_handcuffs_key")
 		ply:Give("weapon_hg_tonfa")
 
-		local gun = ply:Give("weapon_taser")
-		ply:GiveAmmo(gun:GetMaxClip1() * 3,gun:GetPrimaryAmmoType(),true)
+		GiveLessLethal(ply, 3)
 
 		hg.AddArmor(ply, {"vest2"})
 
@@ -803,10 +836,7 @@ MODE.Types.improvision = {
 		end
 	end,
 	GunManLoot = function(ply)
-		local taser = ply:Give("weapon_taser")
-		if IsValid(taser) and taser:GetPrimaryAmmoType() >= 0 then
-			ply:GiveAmmo(taser:GetMaxClip1(), taser:GetPrimaryAmmoType(), true)
-		end
+		GiveLessLethal(ply, 1)
 		ply:Give("weapon_handcuffs")
 		ply:Give("weapon_handcuffs_key")
 	end,
@@ -1429,8 +1459,9 @@ hook.Add("PlayerCanPickupWeapon", "HMCD_TraitorRadioPickup", function( ply, weap
     if ply.isTraitor and weapon:GetClass() == "weapon_walkie_talkie" then
         if ply:HasWeapon("weapon_walkie_talkie") then
             weapon:Remove()
-			ply:SetActiveWeapon("weapon_walkie_talkie")
+			ply:SelectWeapon("weapon_walkie_talkie")
 			ply:ChatPrint("You hide the additional walkie talkie.")
+			return false
         end
     end
 end)
