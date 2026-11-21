@@ -131,26 +131,19 @@ local TraitorAmmoUpgrades = {
 	["weapon_taser_ammo"] = {weapon = "weapon_taser"},
 	["weapon_revolver357_ammo"] = {weapon = "weapon_revolver357"},
 	["weapon_draco_ammo"] = {weapon = "weapon_draco"},
-<<<<<<< HEAD
 	["weapon_dracovska_ammo"] = {weapon = "weapon_dracovska", exact = true}, -- exactly one spare magazine (its mag holds 10)
 	["weapon_hg_bow_ammo"] = {weapon = "weapon_hg_bow", ammo = 5, ammoName = "Arrow"},
-=======
-	["weapon_dracovska_ammo"] = {weapon = "weapon_dracovska"},
->>>>>>> badacaa81c3b7e94ee2c5cb0b2c453ffd219f430
 	["weapon_hg_crossbow_ammo"] = {weapon = "weapon_hg_crossbow", ammo = 4},
 	["weapon_zoraki_ammo"] = {weapon = "weapon_zoraki"},
 	["weapon_mp-80_ammo"] = {weapon = "weapon_mp-80"},
 	["weapon_tranquilizer_ammo"] = {weapon = "weapon_tranquilizer"},
 }
 
-<<<<<<< HEAD
 -- weapons that spawn with only their loaded magazine, so the extra ammo addon is the only spare
 local NoReserveAmmo = {
 	["weapon_dracovska"] = true,
 }
 
-=======
->>>>>>> badacaa81c3b7e94ee2c5cb0b2c453ffd219f430
 local function FindAttachmentDefinition(attachmentId)
 	for attachmentPlacement, definitions in pairs(hg and hg.attachments or {}) do
 		if istable(definitions) and definitions[attachmentId] then
