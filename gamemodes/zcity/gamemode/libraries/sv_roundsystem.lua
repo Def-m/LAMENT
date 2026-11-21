@@ -19,6 +19,8 @@ local ZB_FORCED_TEMP_MODE_WEIGHTS = {
 local ZB_FORCED_MODE_POOL = {
         ["hmcd"] = true,
         ["standard"] = true,
+        ["soe"] = true,
+        ["improvision"] = true,
 	["suicidelunatic"] = true,
 	["active_shooter"] = true,
 	["dm"] = true,
@@ -613,12 +615,12 @@ function zb.GetModesInfo()
 			})
 
 			for name2, mode2 in pairs(mode.Types or {}) do
-				if name2 == "standard" then continue end
 				if ZB_FORCE_LIMITED_MODE_POOL and !ZB_FORCED_MODE_POOL[name2] then continue end
 
+				local subtypeName = name2 == "standard" and "Standard" or string.upper(name2)
 				table.insert(modesInfo, {
 					key = name2,
-					name = mode2.PrintName or ((mode.PrintName or mode.name or name) .. "/" .. name2),
+					name = mode2.PrintName or ((mode.PrintName or mode.name or name) .. "/" .. subtypeName),
 					description = mode2.Description or mode.Description or "",
 					forBigMaps = mode.ForBigMaps or false,
 					canlaunch = (mode:CanLaunch() and 1 or 0)

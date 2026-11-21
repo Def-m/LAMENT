@@ -1,3 +1,4 @@
+if TOOL then TOOL.AddToMenu = false end -- tool is disabled; keep it out of the Q menu tool list
 do return end
 -- TOOL.Category = "ZBattle"
 -- TOOL.Name = "Loot Editor"

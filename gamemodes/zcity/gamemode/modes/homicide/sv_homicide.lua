@@ -628,7 +628,7 @@ MODE.Types.gunfreezone = {
 
 MODE.Types.soe = {
 	Chance = 0.2,
-	ChanceFunction = function() return (zb.GetWorldSize() >= ZBATTLE_BIGMAP) and (zb.ModesChances["soe"] or zb.modes["hmcd"].Types.soe.Chance) or 0 end,
+	ChanceFunction = function() return zb.ModesChances["soe"] or zb.modes["hmcd"].Types.soe.Chance end,
 	LootTable = MODE.LootTable,
 	Messages = {
 		[3] = "Everyone died.",
@@ -637,80 +637,49 @@ MODE.Types.soe = {
 	},
 	Message = "The traitor was ",
 	TraitorLoot = function(ply)
-		local p22 = ply:Give("weapon_p22")
-		hg.AddAttachmentForce(ply,p22,"supressor4")
-		ply:Give("weapon_sogknife")
-		ply:Give("weapon_hg_type59_tpik")
-		ply:Give("weapon_walkie_talkie")
-		ply:Give("weapon_adrenaline")
-		ply:Give("weapon_hg_smokenade_tpik")
-		ply:Give("weapon_traitor_ied")
-		ply:Give("weapon_traitor_poison2")
-		ply:Give("weapon_traitor_poison3")
-		ply:Give("weapon_traitor_poison_consumable")
-		ply.organism.recoilmul = 1
-		ply.organism.stamina.range = 220
+		if MODE.ApplyTraitorLoadout then
+			MODE.ApplyTraitorLoadout(ply)
+			ply.organism.stamina.range = 220
+		else
+			local p22 = ply:Give("weapon_p22")
+			hg.AddAttachmentForce(ply,p22,"supressor4")
+			ply:Give("weapon_sogknife")
+			ply:Give("weapon_hg_type59_tpik")
+			ply:Give("weapon_walkie_talkie")
+			ply:Give("weapon_adrenaline")
+			ply:Give("weapon_hg_smokenade_tpik")
+			ply:Give("weapon_traitor_ied")
+			ply:Give("weapon_traitor_poison2")
+			ply:Give("weapon_traitor_poison3")
+			ply:Give("weapon_traitor_poison_consumable")
+			ply.organism.recoilmul = 1
+			ply.organism.stamina.range = 220
 
-		local inv = ply:GetNetVar("Inventory")
-		inv["Weapons"]["hg_flashlight"] = true
-		ply:SetNetVar("Inventory",inv)
+			local inv = ply:GetNetVar("Inventory")
+			inv["Weapons"]["hg_flashlight"] = true
+			ply:SetNetVar("Inventory",inv)
+		end
 	end,
 	GunManLoot = function(ply)
-		local gun = ply:Give("weapon_kar98")
-		ply.organism.recoilmul = 1.0
-		if gun:GetClass() == "weapon_kar98" then
-			hg.AddAttachmentForce(ply,gun,"optic12")
+		if MODE.ApplyHeroLoadout then
+			MODE.ApplyHeroLoadout(ply)
+		else
+			local gun = ply:Give("weapon_kar98")
+			ply.organism.recoilmul = 1.0
+			if gun:GetClass() == "weapon_kar98" then
+				hg.AddAttachmentForce(ply,gun,"optic12")
+			end
+			local inv = ply:GetNetVar("Inventory")
+			inv["Weapons"]["hg_sling"] = true
+			ply:SetNetVar("Inventory",inv)
 		end
-		local inv = ply:GetNetVar("Inventory")
-		inv["Weapons"]["hg_sling"] = true
-		ply:SetNetVar("Inventory",inv)
 
 		ply:SetNetVar("CurPluv", "pluvboss")
 	end,
 	PoliceTime = 250,
 	PoliceAllowed = true,
 	SkillIssue = 3,
-	PoliceEquipment = function(ply)
-		local inv = ply:GetNetVar("Inventory") or {}
-		inv["Weapons"] = inv["Weapons"] or {}
-		inv["Weapons"]["hg_flashlight"] = true
-		inv["Weapons"]["hg_sling"] = true
-		ply:SetNetVar("Inventory", inv)
-	
-		ply:SetPlayerClass("nationalguard")
-		local gun = ply:Give("weapon_fn45")
-		ply:GiveAmmo(gun:GetMaxClip1() * 3, gun:GetPrimaryAmmoType(), true)
-	
-		gun = ply:Give("weapon_hk416")
-		ply:GiveAmmo(gun:GetMaxClip1() * 3, gun:GetPrimaryAmmoType(), true)
-		hg.AddAttachmentForce(ply, gun, {"holo14", "laser3", "grip3"})
-	
-		ply:Give("weapon_hg_grenade_tpik")
-		ply:Give("weapon_combatknife")
-	
-		ply:Give("weapon_medkit_sh")
-		ply:Give("weapon_bandage_sh")
-		ply:Give("weapon_walkie_talkie")
-		ply:Give("weapon_painkillers_tpik")
-		ply:Give("weapon_morphine")
-	
-		ply.organism.recoilmul = 0.5
-	
-		ply:Give("weapon_handcuffs")
-		ply:Give("weapon_handcuffs_key")
-	
-		gun = ply:Give("weapon_taser")
-		ply:GiveAmmo(gun:GetMaxClip1() * 3, gun:GetPrimaryAmmoType(), true)
-	
-		hg.AddArmor(ply, {"vest4", "helmet1"})
-	
-		local hands = ply:Give("weapon_hands_sh")
-		ply:SetActiveWeapon(hands)
-	
-		zb.GiveRole(ply, "National Guard", Color(55, 85, 0))
-		ply:SetNetVar("CurPluv", "pluvberet")
-	end,
-	PoliceText = "National guards have arrived.",
+	PoliceText = "SWAT have arrived.",
 	PoliceSound = "snd_jack_hmcd_heli2.mp3"
 }
 
@@ -801,14 +770,50 @@ MODE.Types.suicidelunatic = {
 	PoliceAllowed = false,
 }
 
+local SOEType = MODE.Types.soe
+
 MODE.Types = {
 	standard = MODE.Types.standard,
+	soe = SOEType,
 	suicidelunatic = MODE.Types.suicidelunatic,
 }
 
 local modes = {
 	"standard",
-	"suicidelunatic",
+	"soe",
+	"improvision",
+}
+
+MODE.Types.improvision = {
+	PrintName = "Improvision",
+	Chance = 0.2,
+	ChanceFunction = function()
+		return zb.ModesChances["improvision"] or MODE.Types.improvision.Chance
+	end,
+	LootTable = MODE.LootTableStandard,
+	Messages = {
+		[3] = "Everyone died.",
+		[1] = "The Executioner has eliminated everyone.",
+		[0] = "The Executioner was",
+	},
+	Message = "The Executioner was ",
+	TraitorLoot = function(ply)
+		if MODE.ApplyTraitorLoadout then
+			MODE.ApplyTraitorLoadout(ply)
+		end
+	end,
+	GunManLoot = function(ply)
+		local taser = ply:Give("weapon_taser")
+		if IsValid(taser) and taser:GetPrimaryAmmoType() >= 0 then
+			ply:GiveAmmo(taser:GetMaxClip1(), taser:GetPrimaryAmmoType(), true)
+		end
+		ply:Give("weapon_handcuffs")
+		ply:Give("weapon_handcuffs_key")
+	end,
+	PoliceTime = MODE.Types.standard.PoliceTime,
+	PoliceAllowed = MODE.Types.standard.PoliceAllowed,
+	PoliceEquipment = MODE.Types.standard.PoliceEquipment,
+	SkillIssue = MODE.Types.standard.SkillIssue,
 }
 
 util.AddNetworkString("HMCD_RoundStart")
@@ -1213,10 +1218,10 @@ function MODE:RoundThink()
 		local count = math.min(#available, 6)
 	
 		if count > 0 then
-			local spawned = self:SpawnForce("nationalguard", count)
+			local spawned = self:SpawnForce("swat", count)
 			if spawned > 0 then
 				self.PoliceSpawned = true
-				PrintMessage(HUD_PRINTTALK, self.Types[self.Type].PoliceText or "National Guard have arrived.")
+				PrintMessage(HUD_PRINTTALK, self.Types[self.Type].PoliceText or "SWAT have arrived.")
 				EmitSound(self.Types[self.Type].PoliceSound or "snd_jack_hmcd_heli2.mp3", vector_origin, 0, CHAN_AUTO, 1, 125, 0, 100)
 			end
 		end
@@ -1938,9 +1943,12 @@ function MODE.SpawnPlayers(spawn_with_subroles)
                 end
 
                 if(current_ply.isGunner)then
-                    if MODE.ApplyHeroLoadout then
+					if MODE.Type == "improvision" or MODE.Type == "soe" then
+						-- SOE: the Vigilante gets the SOE hero loadout right at spawn (it used to arrive 30s later)
+						MODE.Types[MODE.Type].GunManLoot(current_ply)
+					elseif MODE.ApplyHeroLoadout then
                         MODE.ApplyHeroLoadout(current_ply)
-                    else
+					else
                         MODE.Types[MODE.Type].GunManLoot(current_ply)
                     end
                 end
@@ -1991,10 +1999,14 @@ function MODE.SpawnPlayers(spawn_with_subroles)
             end
 
 			if current_ply.isTraitor and not current_ply.MainTraitor then
-				GiveTraitorAssistantStarterItem(current_ply)
+				if MODE.Type == "improvision" and MODE.ApplyTraitorLoadout then
+					MODE.ApplyTraitorLoadout(current_ply)
+				else
+					GiveTraitorAssistantStarterItem(current_ply)
+				end
 			end
 
-			if current_ply.isTraitor then
+			if current_ply.isTraitor and MODE.Type ~= "improvision" then
 				local giveActivator = current_ply.MainTraitor
 				if not giveActivator then
 					local chanceConvar = GetConVar("ttt_activator_assistant_chance")
@@ -2094,7 +2106,7 @@ function MODE.SpawnPlayers(spawn_with_subroles)
                     
                     net.WriteString(this_player.Profession or "")
                 net.Send(this_player)
-                
+
                 local role = MODE.Roles[MODE.Type][(this_player.isTraitor and "traitor") or (this_player.isGunner and "gunner") or "innocent"]
                 if role then
                     zb.GiveRole(this_player, role.name, role.color)

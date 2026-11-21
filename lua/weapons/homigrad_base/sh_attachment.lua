@@ -17,6 +17,43 @@ local function muzzleCalibersForWeapon(wep)
 	if class == "weapon_mk47" then calibers["762x51"] = true end
 	return calibers
 end
+hg.GetMuzzleCalibersForWeapon = muzzleCalibersForWeapon
+
+local function mountTypesMatch(slotType, attachmentType)
+	if not slotType or not attachmentType then return false end
+	if istable(slotType) then return table.HasValue(slotType, attachmentType) end
+	return slotType == attachmentType
+end
+
+function hg.IsAttachmentCompatible(wep, placement, id, definition)
+	if not definition or definition[1] ~= placement then return false end
+	local slots = wep.availableAttachments
+	local slot = slots and slots[placement]
+	if not slot then return false end
+
+	local explicit = false
+	for _, entry in pairs(slot) do
+		if istable(entry) and entry[1] == id then
+			explicit = true
+			break
+		end
+	end
+
+	local adapter = placement == "sight" and slots.mount and definition.mountType and slots.mount[definition.mountType]
+	if adapter then return true end
+
+	if not slot.mountType and not definition.mountType then
+		if explicit then return true end
+		if placement == "barrel" and istable(definition.calibers) then
+			for caliber in pairs(muzzleCalibersForWeapon(wep)) do
+				if definition.calibers[caliber] then return true end
+			end
+		end
+		return false
+	end
+
+	return mountTypesMatch(slot.mountType, definition.mountType)
+end
 
 function SWEP:SetupMuzzleAttachments()
 	local slot = self.availableAttachments and self.availableAttachments.barrel
@@ -976,9 +1013,9 @@ if CLIENT then
 		local tblcpy = {}
 
 		local inv = lply:GetNetVar("Inventory")
-		if inv == nil then return end
+		if not istable(inv) then return tblcpy end
 
-		local tbl = inv["Attachments"]
+		local tbl = istable(inv["Attachments"]) and inv["Attachments"] or {}
 		local wep = lply:GetActiveWeapon()
 		local achtbl = {}
 		if IsValid(wep) and ishgweapon(wep) then
@@ -990,9 +1027,9 @@ if CLIENT then
 			table.insert(tblcpy, {att, false})
 		end
 
-		if achtbl then
+		if istable(achtbl) then
 			for i, att in pairs(achtbl) do
-				if !att or !next(att) then continue end
+				if !istable(att) or !next(att) then continue end
 				table.insert(tblcpy, {att[1], true})
 			end
 		end
@@ -1003,7 +1040,9 @@ if CLIENT then
 	hg.GetAttachmentsInv = refreshtbl
 
 	hook.Add("OnNetVarSet", "attachmentPanelRefresh", function(index, key, var)
-		if key == "Inventory" or key == "attachments" and Entity(index) == lply:GetActiveWeapon() then
+		if not IsValid(lply) then return end
+		local ent = Entity(index)
+		if (key == "Inventory" and ent == lply) or (key == "attachments" and IsValid(ent) and ent == lply:GetActiveWeapon()) then
 			if IsValid(hg.attachmentsMenuPanel) and hg.attachmentsMenuPanel.RefreshTbl then
 				hg.attachmentsMenuPanel:RefreshTbl()
 			end
@@ -1258,27 +1297,29 @@ if CLIENT then
 		return wep:GetNetVar("attachments", wep.attachments or {}) or {}
 	end
 
-	local function findExplicitEntry(slot, id)
-		for _, entry in pairs(slot or {}) do
-			if istable(entry) and entry[1] == id then return entry end
+	-- What the menu actually displays: inventory attachment counts + installed ids per slot.
+	-- Netvars get re-sent a lot; rebuilding the cards on every resend is what made hover flicker.
+	local function getMenuSignature(wep)
+		local parts = {}
+		for id, count in SortedPairs(getInventoryCounts()) do
+			parts[#parts + 1] = tostring(id) .. ":" .. tostring(count)
 		end
-	end
-
-	local function mountTypesMatch(slotType, attachmentType)
-		if not slotType or not attachmentType then return false end
-		if istable(slotType) then return table.HasValue(slotType, attachmentType) end
-		return slotType == attachmentType
+		parts[#parts + 1] = "|"
+		if IsValid(wep) then
+			local attachments = getWeaponAttachments(wep)
+			local placements = {}
+			for placement in pairs(attachments) do placements[#placements + 1] = tostring(placement) end
+			table.sort(placements)
+			for _, placement in ipairs(placements) do
+				local entry = attachments[placement]
+				parts[#parts + 1] = placement .. "=" .. tostring(istable(entry) and entry[1] or entry)
+			end
+		end
+		return table.concat(parts, ",")
 	end
 
 	local function isCompatible(wep, placement, id, definition)
-		if not definition or definition[1] != placement then return false end
-		local slot = wep.availableAttachments and wep.availableAttachments[placement]
-		if not slot then return false end
-		local explicit = findExplicitEntry(slot, id) != nil
-		local adapter = placement == "sight" and wep.availableAttachments.mount and wep.availableAttachments.mount[definition.mountType]
-		if adapter then return true end
-		if not slot.mountType and not definition.mountType then return explicit end
-		return mountTypesMatch(slot.mountType, definition.mountType)
+		return hg.IsAttachmentCompatible(wep, placement, id, definition)
 	end
 
 	local function getEmptySlotReference(wep, placement, slot)
@@ -1720,10 +1761,13 @@ if CLIENT then
 			end
 
 			function frame:RefreshTbl()
+				local signature = getMenuSignature()
+				if signature == self.lastSignature then return end
+				self.lastSignature = signature
 				buildList()
 			end
 
-			buildList()
+			frame:RefreshTbl()
 
 			function frame:Think()
 				local escapeDown = input.IsKeyDown(KEY_ESCAPE)
@@ -1954,9 +1998,12 @@ if CLIENT then
 		end
 
 		function frame:BuildSlotCards(placement)
-			if self.previewPlacement == placement or placement == "underbarrel" and self.previewPlacement == "gp25" then self:ClearPreview() end
 			local section = self.slotSections[placement]
 			if not IsValid(section) then return end
+			local previewInSlot = self.previewPlacement == placement or placement == "underbarrel" and self.previewPlacement == "gp25"
+			local keepPreviewID = previewInSlot and self.previewID or nil
+			local keepPreviewPlacement = previewInSlot and self.previewPlacement or nil
+			local keptPreviewCard
 			if IsValid(section.cards) then section.cards:Remove() end
 			if IsValid(section.sightSlider) then section.sightSlider:Remove() end
 			if self.weapon.SetupMuzzleAttachments then self.weapon:SetupMuzzleAttachments() end
@@ -2077,6 +2124,9 @@ if CLIENT then
 					frame.previewCard = button
 					frame:SetPreview(cardPlacement, id)
 				end
+				if keepPreviewID and id == keepPreviewID and cardPlacement == keepPreviewPlacement and not keptPreviewCard then
+					keptPreviewCard = card
+				end
 				card.OnCursorExited = function(button)
 					if frame.previewCard != button then return end
 					frame.previewCard = nil
@@ -2147,9 +2197,26 @@ if CLIENT then
 
 			cards:InvalidateLayout(true)
 			cards:SizeToChildren(false, true)
+
+			if keepPreviewID then
+				if IsValid(keptPreviewCard) then
+					-- same module is still listed: hand the hover over to the new card instead of dropping it
+					self.previewCard = keptPreviewCard
+					if not IsValid(self.previewModel) or self.previewID != keepPreviewID then
+						self:SetPreview(keepPreviewPlacement, keepPreviewID)
+					end
+				elseif self.previewID == keepPreviewID then
+					self.previewCard = nil
+					self:ClearPreview()
+				end
+			end
 		end
 
-		function frame:RefreshTbl()
+		function frame:RefreshTbl(force)
+			if not IsValid(self.weapon) then return end
+			local signature = getMenuSignature(self.weapon)
+			if not force and signature == self.lastSignature then return end
+			self.lastSignature = signature
 			self.pendingUntil = 0
 			local attachments = getWeaponAttachments(self.weapon)
 			for placement, button in pairs(self.slotButtons) do

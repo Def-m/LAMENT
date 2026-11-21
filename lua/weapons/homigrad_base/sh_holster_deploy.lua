@@ -6,8 +6,13 @@ SWEP.CooldownDeploy = 1
 SWEP.DeploySnd = {"homigrad/weapons/draw_rifle.mp3", 65, 100, 110}
 SWEP.QuickDrawMul = 0.4
 
+-- Holding the quick-draw key while equipping a pistol draws it faster and one-handed.
+-- hg_quickdraw_alt (client setting): 0 = Shift (sprint key), 1 = Alt (walk key)
 function SWEP:IsQuickDrawing()
-	return self:IsPistolHoldType() and self:KeyDown(IN_SPEED) == true
+	if not self:IsPistolHoldType() then return false end
+	local owner = self:GetOwner()
+	local key = (IsValid(owner) and owner:IsPlayer() and owner:GetInfoNum("hg_quickdraw_alt", 0) >= 1) and IN_WALK or IN_SPEED
+	return self:KeyDown(key) == true
 end
 
 function SWEP:GetDeployDur()

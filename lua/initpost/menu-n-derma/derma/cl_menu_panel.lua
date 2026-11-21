@@ -935,7 +935,7 @@ function PANEL:Init()
 
     self.Buttons = {}
     for k, v in ipairs(Selects) do
-        if v.GamemodeOnly and engine.ActiveGamemode() != "zcity" then continue end
+        if v.GamemodeOnly and not isfunction(hg.DrawLoadoutMenu) then continue end
         self:AddSelect(lDock, v.Title, v)
     end
 

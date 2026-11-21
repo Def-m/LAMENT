@@ -22,14 +22,14 @@ local TRAITOR_PREVIEW_START_OFFSET = 80
 
 local function CreateTraitorMenuFonts()
     surface.CreateFont(TRAITOR_MENU_FONT, {
-        font = "Verily Serif Mono",
+        font = "IBM Plex Mono",
         size = ScreenScale(10),
         weight = 400,
         antialias = true
     })
 
     surface.CreateFont(TRAITOR_POINTS_FONT, {
-        font = "Verily Serif Mono",
+        font = "IBM Plex Mono",
         size = ScreenScale(12),
         weight = 400,
         antialias = true
@@ -53,10 +53,26 @@ end
 hook.Add("OnScreenSizeChanged", "ZCity_TraitorLoadout_Fonts", CreateTraitorMenuFonts)
 CreateTraitorMenuFonts()
 
-local color_whitey = Color(225, 225, 225, 255)
-local clr_verygray = Color(10, 10, 19, 235)
-local menu_gradient_right = Color(18, 18, 18, 65)
-local clr_1 = Color(100, 100, 100, 35)
+local LOADOUT_STYLE = {
+    background = Color(8, 8, 8, 255),
+    topBar = Color(22, 20, 17, 220),
+    panel = Color(28, 28, 28, 180),
+    panelActive = Color(48, 48, 48, 220),
+    panelHover = Color(60, 60, 60, 235),
+    border = Color(180, 180, 180, 90),
+    borderDim = Color(180, 180, 180, 45),
+    accent = Color(225, 225, 225, 255),
+    text = Color(220, 220, 220, 255),
+    dim = Color(140, 140, 140, 255),
+    scrollbar = Color(18, 16, 14, 220),
+    scrollbarGrip = Color(90, 82, 70, 240),
+    scrollbarGripHover = Color(130, 120, 105, 240)
+}
+
+local color_whitey = Color(240, 240, 240, 255)
+local clr_verygray = LOADOUT_STYLE.background
+local menu_gradient_right = Color(80, 80, 80, 15)
+local clr_1 = Color(100, 100, 100, 40)
 
 local tex_gradient_r = Material("vgui/gradient-r")
 local tex_gradient_l = Material("vgui/gradient-l")
@@ -157,7 +173,10 @@ local function PaintAnimatedLabel(self, w, h)
 end
 
 CreateClientConVar("hmcd_traitor_loadout", "", true, true, "Saved traitor loadout")
+CreateClientConVar("hmcd_soe_traitor_loadout", "", true, true, "Saved SOE traitor loadout")
+CreateClientConVar("hmcd_improvision_traitor_loadout", "", true, true, "Saved Improvision traitor loadout")
 CreateClientConVar("hmcd_hero_loadout", "", true, true, "Saved hero loadout")
+CreateClientConVar("hmcd_soe_hero_loadout", "", true, true, "Saved SOE hero loadout")
 CreateClientConVar("zcity_arena_loadout", "", true, true, "Saved Arena loadout")
 
 function SkillsetBlocksGun(config, skillset, id)
@@ -190,6 +209,7 @@ local RoleConfigs = {
         items = {
             ["weapon_p22"] = {cost = 6, name = "Walther P22"},
             ["weapon_pb"] = {cost = 8, name = "PB"},
+            ["weapon_usp"] = {cost = 5, name = "HK USP", desc = "Pistol chambered in 9x19 mm."},
             ["weapon_taser"] = {cost = 6, name = "Taser"},
             ["weapon_6x5"] = {cost = 2, name = "6x5 Bayonet"},
             ["weapon_buck200knife"] = {cost = 2, name = "Buck 120 General"},
@@ -211,13 +231,18 @@ local RoleConfigs = {
             ["weapon_walkie_talkie"] = {cost = 1, name = "Walkie-Talkie"}
         },
         addons = {
-            ["weapon_p22_silencer"] = {cost = 2, name = "P22 Silencer", parent = "weapon_p22"},
-            ["weapon_p22_ammo"] = {cost = 2, name = "P22 Extra Ammo", parent = "weapon_p22", desc = "Start with an extra magazine."},
-            ["weapon_pb_ammo"] = {cost = 4, name = "PB Extra Ammo", parent = "weapon_pb", desc = "Start with an extra magazine."}
+            ["weapon_p22_silencer"] = {cost = 2, name = "Silencer", parent = "weapon_p22", attachment = "supressor1", attachmentGroup = "suppressor"},
+            ["weapon_usp_silencer"] = {cost = 2, name = "Silencer", parent = "weapon_usp", attachment = "supressor2", attachmentGroup = "suppressor"},
+            ["weapon_usp_rmr"] = {cost = 2, name = "RMR", parent = "weapon_usp", attachment = "holo16", attachmentGroup = "optic"},
+            ["weapon_usp_laser"] = {cost = 1, name = "Laser", parent = "weapon_usp", attachment = "laser3", attachmentGroup = "laser"},
+            ["weapon_taser_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_taser", desc = "Start with an extra magazine."},
+            ["weapon_p22_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_p22", desc = "Start with an extra magazine."},
+            ["weapon_pb_ammo"] = {cost = 4, name = "Extra Ammo", parent = "weapon_pb", desc = "Start with an extra magazine."},
         },
         addonOrder = {
             ["weapon_p22"] = {"weapon_p22_silencer", "weapon_p22_ammo"},
-            ["weapon_pb"] = {"weapon_pb_ammo"}
+            ["weapon_pb"] = {"weapon_pb_ammo"},
+            ["weapon_usp"] = {"weapon_usp_silencer", "weapon_usp_rmr", "weapon_usp_laser"}
         },
         exclusions = {
             ["weapon_6x5"] = {["weapon_buck200knife"] = true, ["weapon_hg_ritual"] = true, ["weapon_hg_akula"] = true},
@@ -286,6 +311,37 @@ local RoleConfigs = {
             }
         }
     },
+	traitor_improvision = {
+		title = "IMPROVISION EXECUTIONER",
+		buttonTitle = "Improvision Executioner",
+		maxPoints = 30,
+		convar = "hmcd_improvision_traitor_loadout",
+		saveFile = "zcity_improvision_traitor_loadout.txt",
+		presetFile = "zcity_improvision_traitor_presets.txt",
+		addonOrder = {},
+		items = {
+			["weapon_hg_crossbow"] = {cost = 8, name = "Homemade Crossbow", desc = "The high-lethality exception."},
+            ["weapon_hg_bow"] = {cost = 5, name = "Hunting Bow", desc = "A bow that can be used to hunt."},
+			["weapon_zoraki"] = {cost = 3, name = "Zoraki Stalker M906"},
+			["weapon_mp-80"] = {cost = 3, name = "MP-80-13T"},
+			["weapon_tranquilizer"] = {cost = 6, name = "Tranquilizer Gun"}
+		},
+		addons = {},
+		exclusions = {
+			["weapon_hg_crossbow"] = {["weapon_zoraki"] = true, ["weapon_mp-80"] = true, ["weapon_tranquilizer"] = true},
+			["weapon_hg_bow"] = {["weapon_zoraki"] = true, ["weapon_mp-80"] = true, ["weapon_tranquilizer"] = true},
+			["weapon_zoraki"] = {["weapon_hg_crossbow"] = true, ["weapon_hg_bow"] = true, ["weapon_mp-80"] = true, ["weapon_tranquilizer"] = true},
+			["weapon_mp-80"] = {["weapon_hg_crossbow"] = true, ["weapon_hg_bow"] = true, ["weapon_zoraki"] = true, ["weapon_tranquilizer"] = true},
+			["weapon_tranquilizer"] = {["weapon_hg_crossbow"] = true, ["weapon_hg_bow"] = true, ["weapon_zoraki"] = true, ["weapon_mp-80"] = true}
+		},
+		defaultPresets = {
+			{
+				name = "Tranquilizer",
+				loadout = {weapons = {"weapon_tranquilizer"}}
+			}
+		},
+		defaultLoadout = {weapons = {"weapon_tranquilizer"}}
+	},
     hero = {
         title = "JUDGE",
         buttonTitle = "Judge",
@@ -297,10 +353,15 @@ local RoleConfigs = {
             ["weapon_px4beretta"] = {cost = 4, name = "Beretta PX4", desc = "Reliable sidearm with room for extra ammo."},
             ["weapon_chiappa_rhino"] = {cost = 7, name = "Chiappa Rhino", desc = "Reliable sidearm with room for extra ammo."},
             ["weapon_glock17"] = {cost = 5, name = "Glock 17", desc = "Flexible pistol with strong attachment options."},
-            ["weapon_usp"] = {cost = 5, name = "HK USP", desc = "Steady .45 pistol, accurate and reliable."},
+            ["weapon_m9beretta"] = {cost = 5, name = "Beretta M9", desc = "Reliable 9mm service pistol."},
+            ["weapon_fn45"] = {cost = 5, name = "FNX-45", desc = "Polymer-framed .45 ACP pistol."},
+            ["weapon_m1911"] = {cost = 4, name = "Colt M1911", desc = "Classic .45 ACP pistol."},
             ["weapon_m590a1"] = {cost = 10, name = "M590A1", desc = "Close range stopper with extra shell support."},
             ["weapon_kar98"] = {cost = 8, name = "Karabiner 98k", desc = "Heavy marksman pick that can take a scope and extra rounds."},
             ["weapon_vpo136"] = {cost = 10, name = "VPO-136", desc = "Reliable 7.62x39 carbine with a fixed 10-round magazine."},
+            ["weapon_bandage_sh"] = {cost = 2, name = "Bandage"},
+            ["weapon_medkit_sh"] = {cost = 6, name = "Medkit"},
+            ["weapon_painkillers_tpik"] = {cost = 2, name = "Painkillers"},
             ["ent_armor_vest3"] = {cost = 4, name = "UNTAR Body Armor II", icon = "entities/ent_jack_gmod_ezarmor_untar.png", desc = "Body armor that soaks torso hits."},
             ["ent_armor_helmet3"] = {cost = 2, name = "Untar Helmet I", icon = "entities/ent_jack_gmod_ezarmor_untarhelm.png", desc = "Ballistic helmet that protects the head."},
             ["ent_armor_helmet6"] = {cost = 2, name = "SSh-68 Helmet I", icon = "entities/ent_jack_gmod_ezarmor_ssh68.png", desc = "Steel helmet that protects the head."},
@@ -308,29 +369,27 @@ local RoleConfigs = {
             ["ent_armor_mask2"] = {cost = 2, name = "M40 Gas Mask", icon = "vgui/icons/gasmask", desc = "Face mask offering light protection."},
             ["weapon_mr43"] = {cost = 8, name = "MR-43 Long Barrel", desc = "Long barrel pump-action shotgun."},
             ["weapon_mr43_short"] = {cost = 7, name = "MR-43 Sawed-Off", desc = "Compact sawed-off pump-action shotgun."},
-            ["weapon_mp18"] = {cost = 6, name = "MP-18", desc = "Bolt-action rifle chambered in 7.62x54mm."}
+            ["weapon_mp18"] = {cost = 6, name = "MP-18", desc = "Bolt-action rifle chambered in 7.62x54mm."},
+            ["weapon_handcuffs"] = {cost = 1, name = "Handcuffs", desc = "Restrains a target."},
+            ["weapon_handcuffs_key"] = {cost = 0, name = "Handcuff Key", desc = "Unlocks handcuffs."}
         },
         addons = {
-            ["hero_px4_ammo"] = {cost = 2, name = "PX4 Extra Ammo", parent = "weapon_px4beretta", desc = "Start with extra magazine."},
-            ["hero_glock_silencer"] = {cost = 2, name = "Glock Suppressor", parent = "weapon_glock17", attachment = "supressor2", desc = "Suppress the Glock 17."},
-            ["hero_glock_rmr"] = {cost = 2, name = "Glock RMR", parent = "weapon_glock17", attachment = "holo16", desc = "Adds a compact red dot."},
-            ["hero_glock_laser"] = {cost = 1, name = "Glock Laser", parent = "weapon_glock17", attachment = "laser3", desc = "Adds a visible aiming laser."},
-            ["hero_glock_ammo"] = {cost = 2, name = "Glock Extra Ammo", parent = "weapon_glock17", desc = "Start with extra magazine."},
-            ["hero_usp_ammo"] = {cost = 2, name = "USP Extra Ammo", parent = "weapon_usp", desc = "Start with extra magazine."},
-            ["hero_usp_rmr"] = {cost = 2, name = "USP RMR", parent = "weapon_usp", desc = "Start with sight."},
-            ["hero_usp_supressor"] = {cost = 2, name = "USP Suppressor", parent = "weapon_usp", attachment = "supressor1", desc = "Suppress the USP."},
-            ["hero_m590a1_ammo"] = {cost = 2, name = "M590A1 Extra Shells", parent = "weapon_m590a1", desc = "Start with extra shells."},
-            ["hero_kar98_scope"] = {cost = 2, name = "Kar98 Scope", parent = "weapon_kar98", attachment = "optic12", desc = "Adds the Kar98 scope."},
-            ["hero_kar98_ammo"] = {cost = 2, name = "Kar98 Extra Ammo", parent = "weapon_kar98", desc = "Start with extra rifle rounds."},
-            ["hero_mr43_long_ammo"] = {cost = 2, name = "MR43 Long Extra Shells", parent = "weapon_mr43", desc = "Start with extra shells."},
-            ["hero_mr43_ammo"] = {cost = 2, name = "MR43 Sawed-off Extra Shells", parent = "weapon_mr43_short", desc = "Start with extra shells."},
-            ["hero_mp18_ammo"] = {cost = 2, name = "MP-18 Extra Ammo", parent = "weapon_mp18", desc = "Start with extra rounds."},
-            ["hero_chiappa_ammo"] = {cost = 2, name = "Chiappa Extra Ammo", parent = "weapon_chiappa_rhino", desc = "Start with extra revolver rounds."}
+            ["hero_px4_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_px4beretta", desc = "Start with extra magazine."},
+            ["hero_glock_silencer"] = {cost = 2, name = "Suppressor", parent = "weapon_glock17", attachment = "supressor2", desc = "Suppress the Glock 17."},
+            ["hero_glock_rmr"] = {cost = 2, name = "RMR", parent = "weapon_glock17", attachment = "holo16", desc = "Adds a compact red dot."},
+            ["hero_glock_laser"] = {cost = 1, name = "Laser", parent = "weapon_glock17", attachment = "laser3", desc = "Adds a visible aiming laser."},
+            ["hero_glock_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_glock17", desc = "Start with extra magazine."},
+            ["hero_m590a1_ammo"] = {cost = 2, name = "Extra Shells", parent = "weapon_m590a1", desc = "Start with extra shells."},
+            ["hero_kar98_scope"] = {cost = 2, name = "Scope", parent = "weapon_kar98", attachment = "optic12", desc = "Adds the Kar98 scope."},
+            ["hero_kar98_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_kar98", desc = "Start with extra rifle rounds."},
+            ["hero_mr43_long_ammo"] = {cost = 2, name = "Extra Shells", parent = "weapon_mr43", desc = "Start with extra shells."},
+            ["hero_mr43_ammo"] = {cost = 2, name = "Extra Shells", parent = "weapon_mr43_short", desc = "Start with extra shells."},
+            ["hero_mp18_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_mp18", desc = "Start with extra rounds."},
+            ["hero_chiappa_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_chiappa_rhino", desc = "Start with extra revolver rounds."}
         },
         addonOrder = {
             ["weapon_px4beretta"] = {"hero_px4_ammo"},
             ["weapon_glock17"] = {"hero_glock_silencer", "hero_glock_rmr", "hero_glock_laser", "hero_glock_ammo"},
-            ["weapon_usp"] = {"hero_usp_rmr", "hero_usp_ammo", "hero_usp_supressor"},
             ["weapon_m590a1"] = {"hero_m590a1_ammo"},
             ["weapon_mr43"] = {"hero_mr43_long_ammo"},
             ["weapon_mr43_short"] = {"hero_mr43_ammo"},
@@ -377,12 +436,45 @@ local RoleConfigs = {
 
 RoleConfigs.hero.items["weapon_walkie_talkie"] = {cost = 1, name = "Walkie-Talkie", desc = "Coordinate with the rest of the round."}
 
+RoleConfigs.traitor_improvision.skillsets = table.Copy(RoleConfigs.traitor.skillsets)
+for _, itemId in ipairs({
+    "weapon_traitor_poison1",
+    "weapon_adrenaline",
+    "weapon_walkie_talkie",
+    "weapon_hg_jam",
+    "weapon_traitor_poison_consumable"
+}) do
+    RoleConfigs.traitor_improvision.items[itemId] = table.Copy(RoleConfigs.traitor.items[itemId])
+end
+
+local function AddTraitorAmmoUpgrade(config, weaponId, addonId, cost, desc)
+    if not config.items[weaponId] then return end
+
+    config.addons[addonId] = {
+        cost = cost,
+        name = "Extra Ammo",
+        parent = weaponId,
+        desc = desc or "Start with an extra magazine."
+    }
+    config.addonOrder[weaponId] = config.addonOrder[weaponId] or {}
+    table.insert(config.addonOrder[weaponId], addonId)
+end
+
+AddTraitorAmmoUpgrade(RoleConfigs.traitor, "weapon_usp", "weapon_usp_ammo", 2)
+AddTraitorAmmoUpgrade(RoleConfigs.traitor, "weapon_taser", "weapon_taser_ammo", 2)
+AddTraitorAmmoUpgrade(RoleConfigs.traitor_improvision, "weapon_hg_crossbow", "weapon_hg_crossbow_ammo", 2, "Start with 4 extra bolts.")
+AddTraitorAmmoUpgrade(RoleConfigs.traitor_improvision, "weapon_zoraki", "weapon_zoraki_ammo", 2)
+AddTraitorAmmoUpgrade(RoleConfigs.traitor_improvision, "weapon_mp-80", "weapon_mp-80_ammo", 2)
+AddTraitorAmmoUpgrade(RoleConfigs.traitor_improvision, "weapon_tranquilizer", "weapon_tranquilizer_ammo", 2)
+
 do
     local heroWeaponIds = {
         "weapon_px4beretta",
         "weapon_chiappa_rhino",
         "weapon_glock17",
-        "weapon_usp",
+        "weapon_m9beretta",
+        "weapon_fn45",
+        "weapon_m1911",
         "weapon_m590a1",
         "weapon_mr43",
         "weapon_mr43_short",
@@ -412,6 +504,70 @@ do
             for _, otherId in ipairs(slot) do
                 if otherId ~= armorId then
                     RoleConfigs.hero.exclusions[armorId][otherId] = true
+                end
+            end
+        end
+    end
+end
+
+local function AddVariantRoleConfig(sourceRole, targetRole, title, convar, saveFile, presetFile)
+	local config = table.Copy(RoleConfigs[sourceRole])
+	config.title = title
+	config.convar = convar
+	config.saveFile = saveFile
+	config.presetFile = presetFile
+	config.fallbackRole = sourceRole
+	RoleConfigs[targetRole] = config
+end
+
+AddVariantRoleConfig("traitor", "traitor_soe", "SOE EXECUTIONER", "hmcd_soe_traitor_loadout", "zcity_soe_traitor_loadout.txt", "zcity_soe_traitor_presets.txt")
+AddVariantRoleConfig("hero", "hero_soe", "SOE JUDGE", "hmcd_soe_hero_loadout", "zcity_soe_hero_loadout.txt", "zcity_soe_hero_presets.txt")
+
+RoleConfigs.traitor_soe.items["weapon_revolver357"] = {cost = 7, name = "Colt King Cobra"}
+RoleConfigs.traitor_soe.items["weapon_dracovska"] = {cost = 8, name = "VSKA Draco"}
+AddTraitorAmmoUpgrade(RoleConfigs.traitor_soe, "weapon_revolver357", "weapon_revolver357_ammo", 2)
+AddTraitorAmmoUpgrade(RoleConfigs.traitor_soe, "weapon_dracovska", "weapon_dracovska_ammo", 2)
+
+local standardHeroArmor = {
+    "ent_armor_vest3",
+    "ent_armor_helmet3",
+    "ent_armor_helmet6",
+    "ent_armor_mask1",
+    "ent_armor_mask2"
+}
+for _, armorId in ipairs(standardHeroArmor) do
+    RoleConfigs.hero.items[armorId] = nil
+end
+
+local heroArmorOptions = {
+    ["ent_armor_vest2"] = {
+        cost = 4,
+        name = "PACA Body Armor II",
+        icon = "entities/ent_jack_gmod_ezarmor_paca.png",
+        desc = "Lightweight body armor."
+    },
+    ["ent_armor_vest_riot"] = {
+        cost = 2,
+        name = "MVD Riot Vest",
+        icon = "entities/ent_jack_gmod_ezarmor_stab.png",
+        desc = "Riot vest with strong melee and stab protection."
+    }
+}
+
+for _, roleConfig in ipairs({RoleConfigs.hero, RoleConfigs.hero_soe}) do
+    for armorId, info in pairs(heroArmorOptions) do
+        roleConfig.items[armorId] = table.Copy(info)
+    end
+end
+
+local vestSlot = {"ent_armor_vest2", "ent_armor_vest_riot", "ent_armor_vest3"}
+for _, roleConfig in ipairs({RoleConfigs.hero, RoleConfigs.hero_soe}) do
+    for _, armorId in ipairs(vestSlot) do
+        if roleConfig.items[armorId] then
+            roleConfig.exclusions[armorId] = roleConfig.exclusions[armorId] or {}
+            for _, otherId in ipairs(vestSlot) do
+                if otherId ~= armorId and roleConfig.items[otherId] then
+                    roleConfig.exclusions[armorId][otherId] = true
                 end
             end
         end
@@ -482,6 +638,9 @@ local function ReadSavedLoadout(config)
             return parsed
         end
     end
+	if config.fallbackRole and RoleConfigs[config.fallbackRole] then
+		return ReadSavedLoadout(RoleConfigs[config.fallbackRole])
+	end
     return {}
 end
 
@@ -535,14 +694,17 @@ local function SanitizeLoadout(config, rawLoadout)
         end
     end
 
+    local usedAttachmentGroups = {}
     for _, weaponId in ipairs(rawWeaponIds) do
         local addonInfo = config.addons[weaponId]
-        if addonInfo and not usedWeapons[weaponId] and usedWeapons[addonInfo.parent] and not SkillsetBlocksGun(config, normalizedLoadout.skillset, weaponId) then
+        local groupKey = addonInfo and addonInfo.attachmentGroup and (addonInfo.parent .. ":" .. addonInfo.attachmentGroup)
+        if addonInfo and not usedWeapons[weaponId] and usedWeapons[addonInfo.parent] and not (groupKey and usedAttachmentGroups[groupKey]) and not SkillsetBlocksGun(config, normalizedLoadout.skillset, weaponId) then
             local weaponCost = addonInfo.cost
             if totalPoints + weaponCost <= config.maxPoints then
                 usedWeapons[weaponId] = true
                 table.insert(normalizedLoadout.weapons, weaponId)
                 totalPoints = totalPoints + weaponCost
+                if groupKey then usedAttachmentGroups[groupKey] = true end
             end
         end
     end
@@ -639,9 +801,11 @@ end
 local RoleState = {}
 
 for roleId, config in pairs(RoleConfigs) do
-    RoleState[roleId] = {
-        loadout = SanitizeLoadout(config, ReadSavedLoadout(config))
-    }
+	local savedLoadout = SanitizeLoadout(config, ReadSavedLoadout(config))
+	if config.defaultLoadout and #savedLoadout.weapons == 0 then
+		savedLoadout = SanitizeLoadout(config, config.defaultLoadout)
+	end
+    RoleState[roleId] = {loadout = savedLoadout}
 end
 
 local function SaveLoadout(roleId)
@@ -705,7 +869,7 @@ local function CloseToMainMenu(panel)
     end
 end
 
-local function OpenRoleEditor(parentPanel, roleId, returnPanel)
+local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
     local host = IsValid(parentPanel:GetParent()) and parentPanel:GetParent() or parentPanel
     local editorPanel = vgui.Create("DPanel", host)
     editorPanel:SetPos(0, 0)
@@ -718,6 +882,20 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
 
     local config = RoleConfigs[roleId]
     local state = RoleState[roleId]
+	local isHero = roleId == "hero" or roleId == "hero_soe"
+	local variantOptions = isHero and {
+		{ id = "standard", name = "Standard", roleId = "hero" },
+		{ id = "soe", name = "State of Emergency", roleId = "hero_soe" },
+	} or {
+		{ id = "improvision", name = "Improvision", roleId = "traitor_improvision" },
+		{ id = "standard", name = "Standard", roleId = "traitor" },
+		{ id = "soe", name = "State of Emergency", roleId = "traitor_soe" },
+	}
+	selectedVariant = selectedVariant or (
+		(roleId == "hero_soe" or roleId == "traitor_soe") and "soe"
+		or roleId == "traitor_improvision" and "improvision"
+		or "standard"
+	)
 
     editorPanel:SetAlpha(0)
     editorPanel.Paint = function(self, w, h)
@@ -738,85 +916,54 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
     editorPanel:AlphaTo(255, 0.15, 0)
 
     local sw, sh = ScrW(), ScrH()
-    local sidebarWidth = math.floor(sw / 3.6)
-    local sidebar = vgui.Create("DPanel", editorPanel)
-    sidebar:SetSize(sidebarWidth, sh)
-    sidebar:SetPos(-sidebarWidth, 0)
-    sidebar.TargetX = 0
-    sidebar.Think = function(self)
-        local curX, curY = self:GetPos()
-        if math.abs(curX - self.TargetX) > 0.5 then
-            self:SetPos(Lerp(FrameTime() * 8, curX, self.TargetX), curY)
-        else
-            self:SetPos(self.TargetX, curY)
-        end
-    end
-    sidebar.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(10, 10, 15, 120))
-        surface.SetDrawColor(color_whitey.r, color_whitey.g, color_whitey.b, 90)
-        surface.DrawRect(w - MenuUnit(1), 0, MenuUnit(1), h)
-    end
+    local headerHeight = MenuUnit(54)
+    local sidebarWidth = math.Clamp(math.floor(sw * 0.22), MenuUnit(230), MenuUnit(360))
+    local sidebarHeight = sh - headerHeight
+    local UpdateUI
+    local RefreshItemEditor
+    local previewIconMat
+    local selectedPreviewId
+    local activeSidebarTab = "overview"
+    local itemEditorSelectedId
 
-    local sidebarHeader = vgui.Create("DPanel", sidebar)
-    sidebarHeader:Dock(TOP)
-    sidebarHeader:SetTall(MenuUnit(TRAITOR_HEADER_HEIGHT))
-    sidebarHeader.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(15, 15, 20, 120))
-        surface.SetDrawColor(color_whitey.r, color_whitey.g, color_whitey.b, 140)
+    local topBar = vgui.Create("DPanel", editorPanel)
+    topBar:SetPos(0, 0)
+    topBar:SetSize(sw, headerHeight)
+    topBar.Paint = function(self, w, h)
+        draw.RoundedBox(0, 0, 0, w, h, LOADOUT_STYLE.topBar)
+        surface.SetDrawColor(LOADOUT_STYLE.accent.r, LOADOUT_STYLE.accent.g, LOADOUT_STYLE.accent.b, 100)
         surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
     end
 
-    local sidebarHeaderTitle = vgui.Create("DLabel", sidebarHeader)
-    sidebarHeaderTitle:SetPos(MenuUnit(15), MenuUnit(18))
-    sidebarHeaderTitle:SetFont("ZCity_Menu_Settings_Small")
-    sidebarHeaderTitle:SetTextColor(color_whitey)
-    sidebarHeaderTitle:SetText(config.title)
-    sidebarHeaderTitle:SizeToContents()
-    sidebarHeaderTitle.OpenTime = CurTime()
-    sidebarHeaderTitle.TargetText = config.title
-    function sidebarHeaderTitle:Think()
-        local elapsed = CurTime() - (self.OpenTime or CurTime())
-        local charsToShow = math.floor(elapsed * 18)
-        local target = self.TargetText or ""
-        local len = #target
-        if charsToShow > len then charsToShow = len end
-        if self.TypewriterTarget ~= target then
-            self.TypewriterTarget = target
-            self.LastTypewriterChars = 0
-        end
-        if charsToShow > 0 and charsToShow > (self.LastTypewriterChars or 0) then
-            PlayTypewriterSound()
-        end
-        self.LastTypewriterChars = charsToShow
-        local ntxt = ""
-        for i = 1, len do
-            if i <= charsToShow then
-                ntxt = ntxt .. target:sub(i, i)
-            else
-                ntxt = ntxt .. "#"
+    local function StyleTopButton(btn, selected, accent)
+        btn:SetTextColor(color_whitey)
+        btn:SetFont(TRAITOR_MENU_FONT)
+        btn.Paint = function(self, w, h)
+            local isSelected = selected
+            if isfunction(selected) then isSelected = selected() end
+            local bg = isSelected and LOADOUT_STYLE.panelActive or Color(27, 27, 27, 230)
+            if self:IsHovered() then bg = LOADOUT_STYLE.panelHover end
+            draw.RoundedBox(3, 0, 0, w, h, bg)
+            surface.SetDrawColor(accent or LOADOUT_STYLE.border)
+            surface.DrawOutlinedRect(0, 0, w, h, 1)
+            if isSelected then
+                surface.SetDrawColor(LOADOUT_STYLE.accent.r, LOADOUT_STYLE.accent.g, LOADOUT_STYLE.accent.b, 180)
+                surface.DrawRect(0, 0, MenuUnit(2), h)
             end
-        end
-        if self:GetText() ~= ntxt then
-            self:SetText(ntxt)
-            self:SizeToContents()
         end
     end
 
-    local backBtn = vgui.Create("DLabel", sidebar)
-    backBtn:Dock(BOTTOM)
-    backBtn:DockMargin(MenuUnit(15), MenuUnit(2), 0, MenuUnit(20))
-    backBtn:SetFont("ZCity_Menu_Settings_Small")
-    backBtn:SetTextColor(color_whitey)
-    backBtn:SetTall(MenuUnit(42))
-    SetupAnimatedLabel(backBtn, "<- Return", 0.1, 15)
-    function backBtn:DoClick()
+    local exitBtn = vgui.Create("DButton", topBar)
+    exitBtn:SetPos(MenuUnit(6), MenuUnit(5))
+    exitBtn:SetSize(sw * 0.13, headerHeight - MenuUnit(10))
+    exitBtn:SetText("EXIT")
+    StyleTopButton(exitBtn)
+    exitBtn.DoClick = function()
         surface.PlaySound(SOUND_SETTINGS_CLICK)
         if IsValid(editorPanel.ReturnToPanel) then
             local returnPanel = editorPanel.ReturnToPanel
             editorPanel:AlphaTo(0, 0.2, 0, function()
-                if IsValid(editorPanel) then
-                    editorPanel:Remove()
-                end
+                if IsValid(editorPanel) then editorPanel:Remove() end
             end)
             returnPanel:SetVisible(true)
             returnPanel:AlphaTo(255, 0.2, 0)
@@ -824,63 +971,228 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
         end
         CloseToMainMenu(editorPanel)
     end
-    backBtn.Think = ThinkAnimatedLabel
-    backBtn.Paint = PaintAnimatedLabel
 
-    local clearBtn = vgui.Create("DLabel", sidebar)
-    clearBtn:Dock(BOTTOM)
-    clearBtn:DockMargin(MenuUnit(15), MenuUnit(2), 0, MenuUnit(4))
-    clearBtn:SetFont("ZCity_Menu_Settings_Small")
-    clearBtn:SetTextColor(color_whitey)
-    clearBtn:SetTall(MenuUnit(42))
-    SetupAnimatedLabel(clearBtn, "Clear All", 0, 15)
-
-    local UpdateUI
-
-    function clearBtn:DoClick()
+    local clearBtn = vgui.Create("DButton", topBar)
+    clearBtn:SetPos(sw * 0.145, MenuUnit(5))
+    clearBtn:SetSize(sw * 0.065, headerHeight - MenuUnit(10))
+    clearBtn:SetText("CLEAR")
+    StyleTopButton(clearBtn)
+    clearBtn.DoClick = function()
         surface.PlaySound(SOUND_SETTINGS_CLICK)
         local emptyLoadout = {weapons = {}}
-        if config.skillsets then
-            emptyLoadout.skillset = "none"
-        end
+        if config.skillsets then emptyLoadout.skillset = "none" end
         state.loadout = SanitizeLoadout(config, emptyLoadout)
         SaveLoadout(roleId)
-        if UpdateUI then
-            UpdateUI()
-        end
+        if UpdateUI then UpdateUI() end
     end
-    clearBtn.Think = ThinkAnimatedLabel
-    clearBtn.Paint = PaintAnimatedLabel
 
-    local randomBtn = vgui.Create("DLabel", sidebar)
-    randomBtn:Dock(BOTTOM)
-    randomBtn:DockMargin(MenuUnit(15), MenuUnit(2), 0, MenuUnit(4))
-    randomBtn:SetFont("ZCity_Menu_Settings_Small")
-    randomBtn:SetTextColor(Color(210, 200, 140))
-    randomBtn:SetTall(MenuUnit(42))
-    SetupAnimatedLabel(randomBtn, "Random Loadout", 0, 15)
-
-    function randomBtn:DoClick()
+    local randomBtn = vgui.Create("DButton", topBar)
+    randomBtn:SetPos(sw * 0.215, MenuUnit(5))
+    randomBtn:SetSize(sw * 0.075, headerHeight - MenuUnit(10))
+    randomBtn:SetText("RANDOM")
+    StyleTopButton(randomBtn, false, Color(225, 225, 225, 180))
+    randomBtn.DoClick = function()
         surface.PlaySound(SOUND_MENU_SELECT)
         state.loadout = RandomHomicideLoadout(config)
         SaveLoadout(roleId)
-        if UpdateUI then
-            UpdateUI()
+        if UpdateUI then UpdateUI() end
+    end
+
+    local variantWeights = {
+        Standard = 1,
+        ["State of Emergency"] = 1.5,
+        Improvision = 1.2
+    }
+    local variantGap = MenuUnit(5)
+    local variantStart = randomBtn:GetX() + randomBtn:GetWide() + MenuUnit(8)
+    local variantEnd = sw - sidebarWidth - MenuUnit(8)
+    local variantWidthBudget = math.max(0, variantEnd - variantStart - variantGap * (#variantOptions - 1))
+    local variantTotalWeight = 0
+    for _, variant in ipairs(variantOptions) do
+        variantTotalWeight = variantTotalWeight + (variantWeights[variant.name] or 1)
+    end
+    local variantX = variantStart
+
+    for index, variant in ipairs(variantOptions) do
+        local btn = vgui.Create("DButton", topBar)
+        local variantWidth
+        if index == #variantOptions then
+            variantWidth = variantEnd - variantX
+        else
+            local weight = variantWeights[variant.name] or 1
+            variantWidth = math.floor(variantWidthBudget * weight / variantTotalWeight)
+        end
+        btn:SetPos(variantX, MenuUnit(5))
+        btn:SetSize(variantWidth, headerHeight - MenuUnit(10))
+        btn:SetText(variant.name)
+        StyleTopButton(btn, selectedVariant == variant.id, Color(220, 220, 220, 135))
+        btn.DoClick = function()
+            if variant.roleId == roleId then return end
+            surface.PlaySound(SOUND_MENU_SELECT)
+            editorPanel:Remove()
+            OpenRoleEditor(returnPanel, variant.roleId, returnPanel, variant.id)
+        end
+        variantX = variantX + variantWidth + variantGap
+    end
+
+    local sidebar = vgui.Create("DPanel", editorPanel)
+    sidebar:SetPos(sw - sidebarWidth, headerHeight)
+    sidebar:SetSize(sidebarWidth, sidebarHeight)
+    sidebar.Paint = function(self, w, h)
+        draw.RoundedBox(0, 0, 0, w, h, Color(14, 13, 11, 250))
+        surface.SetDrawColor(LOADOUT_STYLE.accent.r, LOADOUT_STYLE.accent.g, LOADOUT_STYLE.accent.b, 100)
+        surface.DrawRect(0, 0, MenuUnit(1), h)
+    end
+
+    local sidebarContent = vgui.Create("DPanel", sidebar)
+    sidebarContent:Dock(FILL)
+    sidebarContent:DockMargin(MenuUnit(8), MenuUnit(5), MenuUnit(8), MenuUnit(5))
+    sidebarContent.Paint = function() end
+
+    local presetsScroll = vgui.Create("DScrollPanel", sidebarContent)
+    presetsScroll:SetPos(0, 0)
+    presetsScroll:SetSize(sidebarContent:GetWide(), sidebarContent:GetTall())
+    presetsScroll:SetVisible(false)
+    local presetBar = presetsScroll:GetVBar()
+    presetBar:SetHideButtons(true)
+    presetBar.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, LOADOUT_STYLE.scrollbar)
+    end
+    presetBar.btnGrip.Paint = function(self, w, h)
+        draw.RoundedBox(3, 2, 2, w - 4, h - 4, LOADOUT_STYLE.scrollbarGrip)
+    end
+
+    local previewPanel = vgui.Create("DPanel", sidebarContent)
+    previewPanel:SetPos(0, 0)
+    previewPanel:SetSize(sidebarContent:GetWide(), sidebarContent:GetTall())
+    previewPanel.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, LOADOUT_STYLE.panel)
+        surface.SetDrawColor(LOADOUT_STYLE.border)
+        surface.DrawOutlinedRect(0, 0, w, h, 1)
+    end
+
+    local itemEditorPanel = vgui.Create("DPanel", sidebarContent)
+    itemEditorPanel:SetPos(0, 0)
+    itemEditorPanel:SetSize(sidebarContent:GetWide(), sidebarContent:GetTall())
+    itemEditorPanel:SetVisible(false)
+    itemEditorPanel.Paint = previewPanel.Paint
+
+    sidebarContent.PerformLayout = function(self, w, h)
+        presetsScroll:SetPos(0, 0)
+        presetsScroll:SetSize(w, h)
+        previewPanel:SetPos(0, 0)
+        previewPanel:SetSize(w, h)
+        itemEditorPanel:SetPos(0, 0)
+        itemEditorPanel:SetSize(w, h)
+    end
+
+    local sidebarTabs = {
+        {id = "overview", name = "ITEM"},
+        {id = "presets", name = "PRESETS"},
+        {id = "itemEditor", name = "EDIT"}
+    }
+
+    local function SetSidebarTab(tabId)
+        activeSidebarTab = tabId
+        previewPanel:SetVisible(tabId == "overview")
+        presetsScroll:SetVisible(tabId == "presets")
+        itemEditorPanel:SetVisible(tabId == "itemEditor")
+        if tabId == "itemEditor" and RefreshItemEditor and itemEditorSelectedId then
+            RefreshItemEditor(itemEditorSelectedId)
         end
     end
-    randomBtn.Think = ThinkAnimatedLabel
-    randomBtn.Paint = PaintAnimatedLabel
 
-    local presetsScroll = vgui.Create("DScrollPanel", sidebar)
-    presetsScroll:Dock(FILL)
-    local sbar = presetsScroll:GetVBar()
-    sbar:SetHideButtons(true)
-    function sbar:Paint(w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(0, 0, 0, 80))
+    local tabGap = MenuUnit(3)
+    local tabLeft = sw - sidebarWidth + MenuUnit(8)
+    local tabWidth = (sidebarWidth - MenuUnit(16) - tabGap * (#sidebarTabs - 1)) / #sidebarTabs
+    for index, tab in ipairs(sidebarTabs) do
+        local tabId = tab.id
+        local btn = vgui.Create("DButton", topBar)
+        btn:SetPos(tabLeft + (index - 1) * (tabWidth + tabGap), MenuUnit(5))
+        btn:SetSize(tabWidth, headerHeight - MenuUnit(10))
+        btn:SetText(tab.name)
+        btn:SetFont(TRAITOR_MENU_FONT)
+        StyleTopButton(btn, function() return activeSidebarTab == tabId end)
+        btn.DoClick = function()
+            SetSidebarTab(tabId)
+            surface.PlaySound(SOUND_MENU_SELECT)
+        end
     end
-    function sbar.btnGrip:Paint(w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(100, 100, 100, 150))
+
+    local contentPanel = vgui.Create("DPanel", editorPanel)
+    contentPanel:SetPos(0, headerHeight)
+    contentPanel:SetSize(sw - sidebarWidth, sidebarHeight)
+    contentPanel.Paint = function() end
+
+    local listsContainer = vgui.Create("DPanel", contentPanel)
+    listsContainer:Dock(FILL)
+    listsContainer:DockMargin(MenuUnit(4), MenuUnit(4), MenuUnit(4), MenuUnit(4))
+    listsContainer.Paint = function() end
+
+    local loadoutScroll = vgui.Create("DScrollPanel", listsContainer)
+    loadoutScroll:Dock(FILL)
+    local lsbar = loadoutScroll:GetVBar()
+    lsbar:SetHideButtons(true)
+    lsbar.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, LOADOUT_STYLE.scrollbar)
     end
+    lsbar.btnGrip.Paint = function(self, w, h)
+        local gripColor = self:IsHovered() and LOADOUT_STYLE.scrollbarGripHover or LOADOUT_STYLE.scrollbarGrip
+        draw.RoundedBox(3, 2, 2, w - 4, h - 4, gripColor)
+    end
+
+    local iconPanel = vgui.Create("DPanel", previewPanel)
+    iconPanel:Dock(TOP)
+    iconPanel:SetTall(MenuUnit(220))
+    iconPanel:DockMargin(MenuUnit(6), MenuUnit(6), MenuUnit(6), MenuUnit(5))
+    iconPanel.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, LOADOUT_STYLE.background)
+        surface.SetDrawColor(LOADOUT_STYLE.border)
+        surface.DrawOutlinedRect(0, 0, w, h, 1)
+        if not previewIconMat or previewIconMat:IsError() then
+            draw.SimpleText("ITEM IMAGE", TRAITOR_MENU_FONT, w / 2, h / 2, Color(210, 210, 210, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            return
+        end
+        surface.SetDrawColor(255, 255, 255, 255)
+        surface.SetMaterial(previewIconMat)
+        local matW, matH = math.max(previewIconMat:Width(), 1), math.max(previewIconMat:Height(), 1)
+        local scale = math.min((w - MenuUnit(12)) / matW, (h - MenuUnit(12)) / matH)
+        local drawW, drawH = matW * scale, matH * scale
+        surface.DrawTexturedRect((w - drawW) * 0.5, (h - drawH) * 0.5, drawW, drawH)
+    end
+
+    local lblPreviewName = vgui.Create("DLabel", previewPanel)
+    lblPreviewName:Dock(TOP)
+    lblPreviewName:SetTall(MenuUnit(38))
+    lblPreviewName:DockMargin(MenuUnit(6), 0, MenuUnit(6), MenuUnit(5))
+    lblPreviewName:SetFont(TRAITOR_MENU_FONT)
+    lblPreviewName:SetTextColor(color_whitey)
+    lblPreviewName:SetContentAlignment(5)
+    lblPreviewName:SetText("Select an item")
+
+    local lblPreviewDesc = vgui.Create("DLabel", previewPanel)
+    lblPreviewDesc:Dock(TOP)
+    lblPreviewDesc:SetTall(MenuUnit(105))
+    lblPreviewDesc:DockMargin(MenuUnit(6), 0, MenuUnit(6), MenuUnit(6))
+    lblPreviewDesc:SetFont(TRAITOR_MENU_FONT)
+    lblPreviewDesc:SetTextColor(LOADOUT_STYLE.text)
+    lblPreviewDesc:SetContentAlignment(7)
+    lblPreviewDesc:SetWrap(true)
+    lblPreviewDesc:SetAutoStretchVertical(true)
+    lblPreviewDesc:SetText("")
+    lblPreviewDesc.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, LOADOUT_STYLE.panel)
+        surface.SetDrawColor(LOADOUT_STYLE.borderDim)
+        surface.DrawOutlinedRect(0, 0, w, h, 1)
+    end
+
+    local lblPoints = vgui.Create("DLabel", previewPanel)
+    lblPoints:Dock(TOP)
+    lblPoints:SetTall(MenuUnit(34))
+    lblPoints:DockMargin(MenuUnit(8), 0, MenuUnit(8), MenuUnit(6))
+    lblPoints:SetFont(TRAITOR_POINTS_FONT)
+    lblPoints:SetTextColor(color_whitey)
+    lblPoints:SetContentAlignment(5)
 
     local function LoadUserPresets()
         local data = file.Read(config.presetFile, "DATA")
@@ -897,11 +1209,20 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
     local function RefreshPresetsUI()
         presetsScroll:Clear()
 
+        local lblPresets = vgui.Create("DLabel", presetsScroll)
+        lblPresets:Dock(TOP)
+        lblPresets:DockMargin(MenuUnit(6), MenuUnit(10), MenuUnit(6), MenuUnit(5))
+        lblPresets:SetFont(TRAITOR_MENU_FONT)
+        lblPresets:SetTextColor(LOADOUT_STYLE.text)
+        lblPresets:SetContentAlignment(5)
+        lblPresets:SetText("LOADOUT PRESETS")
+        lblPresets:SizeToContentsY()
+
         local lblTitlePresets = vgui.Create("DLabel", presetsScroll)
         lblTitlePresets:Dock(TOP)
         lblTitlePresets:SetText("DEFAULT PRESETS")
         lblTitlePresets:SetFont(TRAITOR_MENU_FONT)
-        lblTitlePresets:SetTextColor(Color(255, 255, 255, 150))
+        lblTitlePresets:SetTextColor(LOADOUT_STYLE.dim)
         lblTitlePresets:SetContentAlignment(5)
         lblTitlePresets:SizeToContentsY()
         lblTitlePresets:DockMargin(0, MenuUnit(10), 0, MenuUnit(5))
@@ -913,12 +1234,12 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
             btn:DockMargin(MenuUnit(5), 0, MenuUnit(5), MenuUnit(2))
             btn:SetText(preset.name)
             btn:SetFont(TRAITOR_MENU_FONT)
-            btn:SetTextColor(Color(200, 255, 200))
+            btn:SetTextColor(LOADOUT_STYLE.text)
             btn.Paint = function(s, w, h)
-                local bgColor = s:IsHovered() and Color(50, 80, 50, 150) or Color(30, 30, 30, 150)
-                draw.RoundedBox(0, 0, 0, w, h, bgColor)
-                surface.SetDrawColor(200, 200, 200, 50)
-                surface.DrawOutlinedRect(0, 0, w, h)
+                local bgColor = s:IsHovered() and LOADOUT_STYLE.panelHover or Color(22, 20, 17, 220)
+                draw.RoundedBox(3, 0, 0, w, h, bgColor)
+                surface.SetDrawColor(LOADOUT_STYLE.borderDim)
+                surface.DrawOutlinedRect(0, 0, w, h, 1)
             end
             btn.DoClick = function()
                 state.loadout = SanitizeLoadout(config, table.Copy(preset.loadout or {}))
@@ -932,7 +1253,7 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
         lblCustomPresets:Dock(TOP)
         lblCustomPresets:SetText("CUSTOM PRESETS")
         lblCustomPresets:SetFont(TRAITOR_MENU_FONT)
-        lblCustomPresets:SetTextColor(Color(255, 255, 255, 150))
+        lblCustomPresets:SetTextColor(LOADOUT_STYLE.dim)
         lblCustomPresets:SetContentAlignment(5)
         lblCustomPresets:SizeToContentsY()
         lblCustomPresets:DockMargin(0, MenuUnit(10), 0, MenuUnit(5))
@@ -944,12 +1265,12 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
         btnCreate:DockMargin(MenuUnit(5), 0, MenuUnit(5), MenuUnit(5))
         btnCreate:SetText("+ SAVE CURRENT AS PRESET")
         btnCreate:SetFont(TRAITOR_MENU_FONT)
-        btnCreate:SetTextColor(Color(255, 255, 255))
+        btnCreate:SetTextColor(LOADOUT_STYLE.text)
         btnCreate.Paint = function(s, w, h)
-            local bgColor = s:IsHovered() and Color(100, 100, 100, 150) or Color(30, 30, 30, 150)
-            draw.RoundedBox(0, 0, 0, w, h, bgColor)
-            surface.SetDrawColor(200, 200, 200, 50)
-            surface.DrawOutlinedRect(0, 0, w, h)
+            local bgColor = s:IsHovered() and LOADOUT_STYLE.panelHover or Color(22, 20, 17, 220)
+            draw.RoundedBox(3, 0, 0, w, h, bgColor)
+            surface.SetDrawColor(LOADOUT_STYLE.borderDim)
+            surface.DrawOutlinedRect(0, 0, w, h, 1)
         end
         btnCreate.DoClick = function()
             Derma_StringRequest("New Preset", "Enter a name for the new preset:", "Custom Preset " .. (#userPresets + 1), function(text)
@@ -966,9 +1287,9 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
             pnl:SetTall(MenuUnit(TRAITOR_PRESET_BUTTON_HEIGHT))
             pnl:DockMargin(MenuUnit(5), 0, MenuUnit(5), MenuUnit(2))
             pnl.Paint = function(s, w, h)
-                draw.RoundedBox(0, 0, 0, w, h, Color(30, 30, 30, 150))
-                surface.SetDrawColor(200, 200, 200, 50)
-                surface.DrawOutlinedRect(0, 0, w, h)
+                draw.RoundedBox(3, 0, 0, w, h, LOADOUT_STYLE.panel)
+                surface.SetDrawColor(LOADOUT_STYLE.borderDim)
+                surface.DrawOutlinedRect(0, 0, w, h, 1)
             end
 
             local lblName = vgui.Create("DLabel", pnl)
@@ -976,7 +1297,7 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
             lblName:DockMargin(MenuUnit(5), 0, 0, 0)
             lblName:SetText(preset.name)
             lblName:SetFont(TRAITOR_MENU_FONT)
-            lblName:SetTextColor(Color(255, 255, 255))
+            lblName:SetTextColor(LOADOUT_STYLE.text)
             lblName:SizeToContentsX()
 
             local btnDelete = vgui.Create("DButton", pnl)
@@ -984,10 +1305,10 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
             btnDelete:SetWide(MenuUnit(30))
             btnDelete:SetText("X")
             btnDelete:SetFont(TRAITOR_MENU_FONT)
-            btnDelete:SetTextColor(Color(255, 100, 100))
+            btnDelete:SetTextColor(LOADOUT_STYLE.dim)
             btnDelete.Paint = function(s, w, h)
                 if s:IsHovered() then
-                    draw.RoundedBox(0, 0, 0, w, h, Color(255, 0, 0, 50))
+                    draw.RoundedBox(3, 0, 0, w, h, Color(120, 40, 35, 100))
                 end
             end
             btnDelete.DoClick = function()
@@ -1001,12 +1322,12 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
             btnLoad:Dock(RIGHT)
             btnLoad:SetText("LOAD")
             btnLoad:SetFont(TRAITOR_MENU_FONT)
-            btnLoad:SetTextColor(Color(200, 255, 200))
+            btnLoad:SetTextColor(LOADOUT_STYLE.text)
             btnLoad:SizeToContentsX()
             btnLoad:SetWide(btnLoad:GetWide() + MenuUnit(10))
             btnLoad.Paint = function(s, w, h)
                 if s:IsHovered() then
-                    draw.RoundedBox(0, 0, 0, w, h, Color(0, 255, 0, 50))
+                    draw.RoundedBox(3, 0, 0, w, h, Color(60, 60, 60, 150))
                 end
             end
             btnLoad.DoClick = function()
@@ -1020,122 +1341,159 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
 
     RefreshPresetsUI()
 
-    local contentPanel = vgui.Create("DPanel", editorPanel)
-    contentPanel:SetPos(sidebarWidth, 0)
-    contentPanel:SetSize(sw - sidebarWidth, sh)
-    contentPanel.Paint = function() end
+    local function GetLoadoutIcon(info, id)
+        local swep = weapons.GetStored(id)
+        local icon = swep and (swep.WepSelectIcon or swep.IconOverride)
 
-    local listsContainer = vgui.Create("DPanel", contentPanel)
-    listsContainer:Dock(FILL)
-    listsContainer:DockMargin(MenuUnit(20), 0, MenuUnit(20), MenuUnit(20))
-    listsContainer.Paint = function() end
-    listsContainer.AnimInit = false
-
-    local loadoutScroll = vgui.Create("DScrollPanel", listsContainer)
-    local lsbar = loadoutScroll:GetVBar()
-    lsbar:SetHideButtons(true)
-    function lsbar:Paint(w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(0, 0, 0, 80))
-    end
-    function lsbar.btnGrip:Paint(w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(200, 200, 200, 150))
-    end
-
-    local previewPanel = vgui.Create("DPanel", listsContainer)
-    previewPanel.Paint = function(s, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(20, 20, 20, 180))
-        surface.SetDrawColor(200, 200, 200, 50)
-        surface.DrawOutlinedRect(0, 0, w, h)
-    end
-
-    local lblPoints = vgui.Create("DLabel", previewPanel)
-    lblPoints:Dock(BOTTOM)
-    lblPoints:SetFont(TRAITOR_POINTS_FONT)
-    lblPoints:SetTextColor(Color(255, 255, 255))
-    lblPoints:SetContentAlignment(9)
-    lblPoints:SizeToContentsY()
-    lblPoints:DockMargin(0, 0, MenuUnit(14), MenuUnit(12))
-    lblPoints:SetAlpha(0)
-
-    loadoutScroll:SetAlpha(0)
-    previewPanel:SetAlpha(0)
-
-    listsContainer.Think = function(self)
-        local w, h = self:GetSize()
-        if w <= 0 or h <= 0 then return end
-
-        local gap = MenuUnit(20)
-        local minPanelW = MenuUnit(180)
-        local maxListW = w - gap - minPanelW
-        if maxListW < minPanelW then
-            maxListW = minPanelW
+        if isstring(icon) and icon ~= "" then
+            return Material(icon)
+        end
+        if type(icon) == "IMaterial" then
+            return icon
         end
 
-        local listW = math.Clamp(math.floor(w * TRAITOR_LIST_WIDTH), minPanelW, maxListW)
-        local previewW = math.max(0, w - listW - gap)
-
-        loadoutScroll:SetSize(listW, h)
-        previewPanel:SetSize(previewW, h)
-
-        local baseListX, baseListY = 0, 0
-        local basePrevX, basePrevY = listW + gap, 0
-
-        if not self.AnimInit then
-            loadoutScroll:SetPos(baseListX, h + MenuUnit(TRAITOR_LIST_START_OFFSET))
-            previewPanel:SetPos(basePrevX + previewW + MenuUnit(TRAITOR_PREVIEW_START_OFFSET), basePrevY)
-            self.AnimInit = true
+        if info and info.attachment and hg.attachmentsIcons and hg.attachmentsIcons[info.attachment] then
+            return Material(hg.attachmentsIcons[info.attachment])
         end
-
-        local _, listY = loadoutScroll:GetPos()
-        loadoutScroll:SetPos(baseListX, Lerp(FrameTime() * TRAITOR_LIST_SLIDE_SPEED, listY, baseListY))
-
-        local prevX = previewPanel:GetPos()
-        previewPanel:SetPos(Lerp(FrameTime() * TRAITOR_PREVIEW_SLIDE_SPEED, prevX, basePrevX), basePrevY)
-
-        loadoutScroll:SetAlpha(math.Clamp(Lerp(FrameTime() * TRAITOR_CONTENT_FADE_SPEED, loadoutScroll:GetAlpha(), 255), 0, 255))
-        previewPanel:SetAlpha(math.Clamp(Lerp(FrameTime() * TRAITOR_CONTENT_FADE_SPEED, previewPanel:GetAlpha(), 255), 0, 255))
-        lblPoints:SetAlpha(previewPanel:GetAlpha())
+        if info and isstring(info.icon) and info.icon ~= "" then
+            return Material(info.icon)
+        end
     end
 
-    local lblPreviewName = vgui.Create("DLabel", previewPanel)
-    lblPreviewName:Dock(TOP)
-    lblPreviewName:DockMargin(0, MenuUnit(10), 0, 0)
-    lblPreviewName:SetFont(TRAITOR_MENU_FONT)
-    lblPreviewName:SetTextColor(Color(255, 255, 255))
-    lblPreviewName:SetContentAlignment(5)
-    lblPreviewName:SetText("Hover over an item")
-    lblPreviewName:SizeToContentsY()
+    local editorListTitle = vgui.Create("DLabel", itemEditorPanel)
+    editorListTitle:Dock(TOP)
+    editorListTitle:SetTall(MenuUnit(24))
+    editorListTitle:DockMargin(MenuUnit(6), MenuUnit(4), MenuUnit(6), MenuUnit(2))
+    editorListTitle:SetFont("ZCity_Menu_Settings_Small")
+    editorListTitle:SetTextColor(color_whitey)
+    editorListTitle:SetContentAlignment(5)
+    editorListTitle:SetText("ITEMS WITH ATTACHMENTS")
 
-    local lblPreviewDesc = vgui.Create("DLabel", previewPanel)
-    lblPreviewDesc:Dock(FILL)
-    lblPreviewDesc:DockMargin(MenuUnit(10), MenuUnit(10), MenuUnit(10), MenuUnit(10))
-    lblPreviewDesc:SetFont(TRAITOR_MENU_FONT)
-    lblPreviewDesc:SetTextColor(Color(200, 200, 200))
-    lblPreviewDesc:SetContentAlignment(7)
-    lblPreviewDesc:SetWrap(true)
-    lblPreviewDesc:SetText("")
+    local editorItemScroll = vgui.Create("DScrollPanel", itemEditorPanel)
+    editorItemScroll:Dock(TOP)
+    editorItemScroll:SetTall(MenuUnit(92))
+    editorItemScroll:DockMargin(MenuUnit(6), 0, MenuUnit(6), MenuUnit(5))
+    local editorItemBar = editorItemScroll:GetVBar()
+    editorItemBar:SetHideButtons(true)
+    editorItemBar.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, LOADOUT_STYLE.scrollbar)
+    end
+    editorItemBar.btnGrip.Paint = function(self, w, h)
+        local gripColor = self:IsHovered() and LOADOUT_STYLE.scrollbarGripHover or LOADOUT_STYLE.scrollbarGrip
+        draw.RoundedBox(3, 2, 2, w - 4, h - 4, gripColor)
+    end
 
-    local previewIconMat = nil
-    local iconPanel = vgui.Create("DPanel", previewPanel)
-    iconPanel:Dock(TOP)
-    iconPanel:SetTall(MenuUnit(200))
-    iconPanel:DockMargin(MenuUnit(10), MenuUnit(10), MenuUnit(10), 0)
-    iconPanel.Paint = function(pnl, w, h)
-        if not previewIconMat then return end
+    local editorItemColumns = sidebarWidth >= MenuUnit(300) and 2 or 1
+    local editorItemGap = MenuUnit(4)
+    local editorItemRowHeight = MenuUnit(26)
+    local editorItemButtonWidth = math.max(MenuUnit(90), math.floor((sidebarWidth - MenuUnit(36) - editorItemGap * (editorItemColumns - 1)) / editorItemColumns))
+    local editorItemGrid = vgui.Create("DIconLayout", editorItemScroll:GetCanvas())
+    editorItemGrid:Dock(TOP)
+    editorItemGrid:SetSpaceX(editorItemGap)
+    editorItemGrid:SetSpaceY(MenuUnit(2))
+    local editorItemCount = 0
+
+    for _, itemId in ipairs(config.itemOrder or {}) do
+        if config.items[itemId] and config.addonOrder[itemId] and #config.addonOrder[itemId] > 0 then
+            local parentId = itemId
+            local itemInfo = config.items[parentId]
+            local itemButton = editorItemGrid:Add("DButton")
+            itemButton:SetSize(editorItemButtonWidth, editorItemRowHeight)
+            itemButton:SetText("")
+            itemButton.Paint = function(self, w, h)
+                local selected = itemEditorSelectedId == parentId
+                local bg = selected and LOADOUT_STYLE.panelActive or LOADOUT_STYLE.panel
+                if self:IsHovered() then bg = LOADOUT_STYLE.panelHover end
+                draw.RoundedBox(3, 0, 0, w, h, bg)
+                surface.SetDrawColor(selected and LOADOUT_STYLE.accent or LOADOUT_STYLE.borderDim)
+                surface.DrawOutlinedRect(0, 0, w, h, 1)
+                if selected then
+                    surface.SetDrawColor(LOADOUT_STYLE.accent)
+                    surface.DrawRect(0, 0, MenuUnit(2), h)
+                end
+                draw.SimpleText(itemInfo.name, "ZCity_Menu_Settings_Small", MenuUnit(6), h / 2, color_whitey, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            end
+            itemButton.DoClick = function()
+                itemEditorSelectedId = parentId
+                if RefreshItemEditor then RefreshItemEditor(parentId) end
+                surface.PlaySound(SOUND_MENU_SELECT)
+            end
+            editorItemCount = editorItemCount + 1
+        end
+    end
+
+    local editorItemRows = math.ceil(editorItemCount / editorItemColumns)
+    local editorItemGridHeight = editorItemRows * editorItemRowHeight + math.max(editorItemRows - 1, 0) * MenuUnit(2)
+    editorItemGrid:SetTall(editorItemGridHeight)
+    editorItemScroll:SetTall(math.min(editorItemGridHeight, math.max(MenuUnit(92), sidebarHeight * 0.35)))
+
+    local editorIconMat
+    local editorIconPanel = vgui.Create("DPanel", itemEditorPanel)
+    editorIconPanel:Dock(TOP)
+    editorIconPanel:SetTall(MenuUnit(145))
+    editorIconPanel:DockMargin(MenuUnit(6), 0, MenuUnit(6), MenuUnit(4))
+    editorIconPanel.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, LOADOUT_STYLE.background)
+        surface.SetDrawColor(LOADOUT_STYLE.border)
+        surface.DrawOutlinedRect(0, 0, w, h, 1)
+        if not editorIconMat or editorIconMat:IsError() then
+            draw.SimpleText("ITEM IMAGE", TRAITOR_MENU_FONT, w / 2, h / 2, Color(210, 210, 210, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            return
+        end
         surface.SetDrawColor(255, 255, 255, 255)
-        surface.SetMaterial(previewIconMat)
-        local matW = math.max(previewIconMat:Width(), 1)
-        local matH = math.max(previewIconMat:Height(), 1)
-        local iconScale = math.min(w / matW, h / matH)
-        local iconW = matW * iconScale
-        local iconH = matH * iconScale
-        local iconX = (w - iconW) * 0.5
-        local iconY = (h - iconH) * 0.5
-        surface.DrawTexturedRect(iconX, iconY, iconW, iconH)
+        surface.SetMaterial(editorIconMat)
+        local matW, matH = math.max(editorIconMat:Width(), 1), math.max(editorIconMat:Height(), 1)
+        local scale = math.min((w - MenuUnit(12)) / matW, (h - MenuUnit(12)) / matH)
+        local drawW, drawH = matW * scale, matH * scale
+        surface.DrawTexturedRect((w - drawW) * 0.5, (h - drawH) * 0.5, drawW, drawH)
+    end
+
+    local editorPreviewName = vgui.Create("DLabel", itemEditorPanel)
+    editorPreviewName:Dock(TOP)
+    editorPreviewName:SetTall(MenuUnit(30))
+    editorPreviewName:DockMargin(MenuUnit(6), 0, MenuUnit(6), MenuUnit(3))
+    editorPreviewName:SetFont(TRAITOR_MENU_FONT)
+    editorPreviewName:SetTextColor(color_whitey)
+    editorPreviewName:SetContentAlignment(5)
+    editorPreviewName:SetText("Select an item")
+
+    local editorAttachmentHeader = vgui.Create("DPanel", itemEditorPanel)
+    editorAttachmentHeader:Dock(TOP)
+    editorAttachmentHeader:SetTall(MenuUnit(26))
+    editorAttachmentHeader:DockMargin(MenuUnit(6), 0, MenuUnit(6), MenuUnit(3))
+    editorAttachmentHeader.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, Color(22, 20, 17, 220))
+        draw.SimpleText("ATTACHMENTS", "ZCity_Menu_Settings_Small", w / 2, h / 2, LOADOUT_STYLE.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+
+    local editorPoints = vgui.Create("DLabel", itemEditorPanel)
+    editorPoints:Dock(BOTTOM)
+    editorPoints:SetTall(MenuUnit(30))
+    editorPoints:DockMargin(MenuUnit(8), 0, MenuUnit(8), MenuUnit(4))
+    editorPoints:SetFont(TRAITOR_POINTS_FONT)
+    editorPoints:SetTextColor(color_whitey)
+    editorPoints:SetContentAlignment(5)
+
+    local editorAttachmentScroll = vgui.Create("DScrollPanel", itemEditorPanel)
+    editorAttachmentScroll:Dock(FILL)
+    editorAttachmentScroll:DockMargin(MenuUnit(6), 0, MenuUnit(6), MenuUnit(4))
+    local editorAttachmentBar = editorAttachmentScroll:GetVBar()
+    editorAttachmentBar:SetHideButtons(true)
+    editorAttachmentBar.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, LOADOUT_STYLE.scrollbar)
+    end
+    editorAttachmentBar.btnGrip.Paint = function(self, w, h)
+        local gripColor = self:IsHovered() and LOADOUT_STYLE.scrollbarGripHover or LOADOUT_STYLE.scrollbarGrip
+        draw.RoundedBox(3, 2, 2, w - 4, h - 4, gripColor)
     end
 
     local function UpdatePreview(id, isSkill)
         previewIconMat = nil
+        if isSkill then
+            selectedPreviewId = nil
+        else
+            selectedPreviewId = id
+        end
 
         if isSkill then
             local info = config.skillsets[id]
@@ -1157,25 +1515,103 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
             if isstring(swep.Instructions) and swep.Instructions ~= "" then
                 desc = swep.Instructions
             end
-            if swep.WepSelectIcon then
-                if isstring(swep.WepSelectIcon) and swep.WepSelectIcon ~= "" then
-                    previewIconMat = Material(swep.WepSelectIcon)
-                elseif type(swep.WepSelectIcon) == "IMaterial" then
-                    previewIconMat = swep.WepSelectIcon
+        end
+        previewIconMat = GetLoadoutIcon(info, id)
+        lblPreviewDesc:SetText(desc)
+    end
+
+    local function PopulateAddonRows(scroll, id)
+        scroll:Clear()
+        local info = config.items[id] or config.addons[id]
+        local parentId = config.items[id] and id or info and info.parent
+        local addonIds = parentId and config.addonOrder[parentId]
+        if not addonIds or #addonIds == 0 then
+            local emptyLabel = vgui.Create("DLabel", scroll)
+            emptyLabel:Dock(TOP)
+            emptyLabel:DockMargin(MenuUnit(6), MenuUnit(8), MenuUnit(6), 0)
+            emptyLabel:SetFont(TRAITOR_MENU_FONT)
+            emptyLabel:SetTextColor(LOADOUT_STYLE.dim)
+            emptyLabel:SetContentAlignment(5)
+            emptyLabel:SetText("NO ATTACHMENTS AVAILABLE")
+            emptyLabel:SizeToContentsY()
+            return
+        end
+
+        for _, addonId in ipairs(addonIds) do
+            local addonInfo = config.addons[addonId]
+            if addonInfo then
+                local currentAddonId = addonId
+                local currentAddonInfo = addonInfo
+                local btn = vgui.Create("DButton", scroll)
+                btn:Dock(TOP)
+                btn:SetTall(MenuUnit(TRAITOR_PRESET_BUTTON_HEIGHT))
+                btn:DockMargin(0, 0, MenuUnit(4), MenuUnit(4))
+                btn:SetText("")
+                btn.Paint = function(self, w, h)
+                    local selected = table.HasValue(state.loadout.weapons, currentAddonId)
+                    local parentSelected = table.HasValue(state.loadout.weapons, parentId)
+                    local disabled = not parentSelected and not selected
+                    local bg = selected and LOADOUT_STYLE.panelActive or LOADOUT_STYLE.panel
+                    if self:IsHovered() and not disabled then bg = LOADOUT_STYLE.panelHover end
+                    draw.RoundedBox(3, 0, 0, w, h, bg)
+                    surface.SetDrawColor(selected and LOADOUT_STYLE.accent or LOADOUT_STYLE.borderDim)
+                    surface.DrawOutlinedRect(0, 0, w, h, 1)
+                    if selected then
+                        surface.SetDrawColor(LOADOUT_STYLE.accent)
+                        surface.DrawRect(0, 0, MenuUnit(2), h)
+                    end
+                    draw.SimpleText(currentAddonInfo.name, TRAITOR_MENU_FONT, MenuUnit(7), h / 2, disabled and LOADOUT_STYLE.dim or LOADOUT_STYLE.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    draw.SimpleText(currentAddonInfo.cost .. " PTS", TRAITOR_MENU_FONT, w - MenuUnit(7), h / 2, LOADOUT_STYLE.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                end
+                btn.DoClick = function()
+                    if not table.HasValue(state.loadout.weapons, parentId) then
+                        surface.PlaySound("buttons/button10.wav")
+                        return
+                    end
+
+                    if table.HasValue(state.loadout.weapons, currentAddonId) then
+                        table.RemoveByValue(state.loadout.weapons, currentAddonId)
+                    else
+                        local points = GetLoadoutPoints(config, state.loadout)
+                        local replacedIndexes = {}
+                        if currentAddonInfo.attachmentGroup then
+                            for index = #state.loadout.weapons, 1, -1 do
+                                local selectedInfo = config.addons[state.loadout.weapons[index]]
+                                if selectedInfo and selectedInfo.parent == parentId and selectedInfo.attachmentGroup == currentAddonInfo.attachmentGroup then
+                                    points = points - selectedInfo.cost
+                                    replacedIndexes[#replacedIndexes + 1] = index
+                                end
+                            end
+                        end
+
+                        if points + currentAddonInfo.cost > config.maxPoints then
+                            surface.PlaySound("buttons/button10.wav")
+                            return
+                        end
+
+                        for _, index in ipairs(replacedIndexes) do
+                            table.remove(state.loadout.weapons, index)
+                        end
+                        table.insert(state.loadout.weapons, currentAddonId)
+                    end
+
+                    SaveLoadout(roleId)
+                    UpdateUI()
+                    surface.PlaySound(SOUND_MENU_SELECT)
                 end
             end
-            if not previewIconMat and isstring(swep.IconOverride) and swep.IconOverride ~= "" then
-                previewIconMat = Material(swep.IconOverride)
-            end
-        elseif info.attachment and hg.attachmentsIcons and hg.attachmentsIcons[info.attachment] then
-            previewIconMat = Material(hg.attachmentsIcons[info.attachment])
         end
+    end
 
-        if not previewIconMat and isstring(info.icon) and info.icon ~= "" then
-            previewIconMat = Material(info.icon)
-        end
+    RefreshItemEditor = function(id)
+        local info = config.items[id]
+        if not info then return end
 
-        lblPreviewDesc:SetText(desc)
+        itemEditorSelectedId = id
+        editorIconMat = GetLoadoutIcon(info, id)
+        editorPreviewName:SetText(info.name)
+        editorPoints:SetText("POINTS: " .. GetLoadoutPoints(config, state.loadout) .. " / " .. config.maxPoints)
+        PopulateAddonRows(editorAttachmentScroll, id)
     end
 
     UpdateUI = function()
@@ -1184,189 +1620,221 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel)
 
         local currentPoints = GetLoadoutPoints(config, state.loadout)
         lblPoints:SetText("POINTS: " .. currentPoints .. " / " .. config.maxPoints)
-        lblPoints:SetTextColor(Color(255, 255, 255))
+        lblPoints:SetTextColor(LOADOUT_STYLE.text)
 
-        local function AddCategory(title)
-            local catLbl = vgui.Create("DLabel", loadoutScroll)
-            catLbl:SetText(title)
-            catLbl:SetFont(TRAITOR_MENU_FONT)
-            catLbl:SetTextColor(Color(220, 220, 220))
-            catLbl:Dock(TOP)
-            catLbl:DockMargin(0, MenuUnit(10), 0, MenuUnit(5))
-            catLbl:SizeToContentsY()
+        local function AddCategory(title, itemIds, buildCards)
+            local categoryPoints = 0
+            for _, itemId in ipairs(itemIds or {}) do
+                local isSelected = table.HasValue(state.loadout.weapons, itemId)
+                    or config.skillsets and state.loadout.skillset == itemId
+                if isSelected then
+                    local itemInfo = config.items[itemId] or config.skillsets and config.skillsets[itemId]
+                    categoryPoints = categoryPoints + (itemInfo and itemInfo.cost or 0)
+                end
+            end
+
+            local section = vgui.Create("DPanel", loadoutScroll)
+            section:Dock(TOP)
+            section:SetTall(MenuUnit(210))
+            section:DockMargin(MenuUnit(4), MenuUnit(8), MenuUnit(8), 0)
+            section.Paint = function(self, w, h)
+                surface.SetDrawColor(LOADOUT_STYLE.borderDim)
+                surface.DrawOutlinedRect(0, 0, w, h, 1)
+            end
+
+            local header = vgui.Create("DPanel", section)
+            header:Dock(TOP)
+            header:SetTall(MenuUnit(30))
+            header:DockMargin(0, 0, 0, MenuUnit(5))
+            header.Paint = function(self, w, h)
+                draw.RoundedBox(3, 0, 0, w, h, Color(22, 20, 17, 220))
+                surface.SetDrawColor(LOADOUT_STYLE.borderDim)
+                surface.DrawOutlinedRect(0, 0, w, h, 1)
+                draw.SimpleText(title, TRAITOR_MENU_FONT, MenuUnit(8), h / 2, LOADOUT_STYLE.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(categoryPoints .. " POINTS", TRAITOR_MENU_FONT, w - MenuUnit(8), h / 2, LOADOUT_STYLE.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            end
+
+            local scroller = vgui.Create("DHorizontalScroller", section)
+            scroller:Dock(FILL)
+            scroller:DockMargin(MenuUnit(2), 0, MenuUnit(2), MenuUnit(2))
+            scroller:SetOverlap(0)
+            buildCards(scroller)
         end
 
-        if config.skillsets and next(config.skillsets) then
-            AddCategory("SKILLSETS")
-            for _, id in ipairs(config.skillsetOrder) do
-                local info = config.skillsets[id]
-                local btn = vgui.Create("DButton", loadoutScroll)
-                btn:Dock(TOP)
-                btn:SetTall(MenuUnit(TRAITOR_LIST_BUTTON_HEIGHT))
-                btn:DockMargin(0, 0, 0, MenuUnit(TRAITOR_BUTTON_SPACING))
-                btn:SetText("")
-                btn.Paint = function(s, w, h)
-                    local isSelected = state.loadout.skillset == id
-                    local bgColor = isSelected and Color(100, 100, 100, 150) or Color(30, 30, 30, 150)
-                    if s:IsHovered() then
-                        bgColor = Color(150, 150, 150, 150)
-                    end
-                    draw.RoundedBox(0, 0, 0, w, h, bgColor)
-                    surface.SetDrawColor(200, 200, 200, 50)
-                    surface.DrawOutlinedRect(0, 0, w, h)
-                    draw.SimpleText(info.name .. " (" .. info.cost .. " pts)", TRAITOR_MENU_FONT, MenuUnit(10), h / 2, Color(255, 255, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                    if isSelected then
-                        draw.SimpleText("EQUIPPED", TRAITOR_MENU_FONT, w - MenuUnit(10), h / 2, Color(100, 255, 100), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
-                    end
+        local function AddCard(scroller, id, info, isSkill)
+            local card = vgui.Create("DButton", scroller)
+            local cardWidth = math.Clamp(math.floor((sw - sidebarWidth) * 0.22), MenuUnit(150), MenuUnit(275))
+            card:SetSize(cardWidth, MenuUnit(165))
+            card:SetText("")
+            scroller:AddPanel(card)
+            local cardIcon = not isSkill and GetLoadoutIcon(info, id)
+            card.Paint = function(self, w, h)
+                local selected = isSkill and state.loadout.skillset == id or not isSkill and table.HasValue(state.loadout.weapons, id)
+                local disabled = not isSkill and not selected and HasWeaponConflict(config, state.loadout.weapons, id)
+                local bg = selected and LOADOUT_STYLE.panelActive or LOADOUT_STYLE.panel
+                if self:IsHovered() and not disabled then bg = LOADOUT_STYLE.panelHover end
+                draw.RoundedBox(3, 0, 0, w, h, bg)
+                surface.SetDrawColor(selected and LOADOUT_STYLE.accent or LOADOUT_STYLE.borderDim)
+                surface.DrawOutlinedRect(0, 0, w, h, 1)
+                if selected then
+                    surface.SetDrawColor(LOADOUT_STYLE.accent)
+                    surface.DrawRect(0, 0, MenuUnit(3), h)
                 end
-                btn.OnCursorEntered = function()
-                    UpdatePreview(id, true)
+
+                if not isSkill then
+                    if cardIcon and not cardIcon:IsError() then
+                        surface.SetDrawColor(255, 255, 255, disabled and 90 or 235)
+                        surface.SetMaterial(cardIcon)
+                        local iconSize = math.min(w - MenuUnit(20), h - MenuUnit(48))
+                        surface.DrawTexturedRect((w - iconSize) / 2, MenuUnit(6), iconSize, iconSize)
+                    else
+                        draw.SimpleText("ITEM", TRAITOR_MENU_FONT, w / 2, h / 2 - MenuUnit(10), LOADOUT_STYLE.dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                    end
+                else
+                    draw.SimpleText("ABILITY", TRAITOR_MENU_FONT, w / 2, h / 2 - MenuUnit(10), LOADOUT_STYLE.dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
                 end
-                btn.DoClick = function()
-                    local oldSkillset = state.loadout.skillset
-                    local oldCost = config.skillsets[oldSkillset] and config.skillsets[oldSkillset].cost or 0
-                    local costDiff = info.cost - oldCost
-                    if currentPoints + costDiff > config.maxPoints then
+
+                draw.SimpleText(info.cost .. " PTS", TRAITOR_MENU_FONT, MenuUnit(8), MenuUnit(6), LOADOUT_STYLE.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+                draw.SimpleText(info.name, TRAITOR_MENU_FONT, w / 2, h - MenuUnit(27), disabled and LOADOUT_STYLE.dim or color_whitey, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                if selected then
+                    draw.SimpleText("EQUIPPED", TRAITOR_MENU_FONT, w - MenuUnit(8), MenuUnit(6), LOADOUT_STYLE.accent, TEXT_ALIGN_RIGHT, TEXT_ALIGN_TOP)
+                end
+                if disabled then
+                    draw.RoundedBox(3, 0, 0, w, h, Color(0, 0, 0, 105))
+                end
+            end
+            card.OnCursorEntered = function()
+                if activeSidebarTab == "overview" then
+                    UpdatePreview(id, isSkill)
+                end
+            end
+            card.DoClick = function()
+                if isSkill then
+                    local old = config.skillsets[state.loadout.skillset]
+                    local delta = info.cost - (old and old.cost or 0)
+                    if GetLoadoutPoints(config, state.loadout) + delta > config.maxPoints then
                         surface.PlaySound("buttons/button10.wav")
                         return
                     end
                     state.loadout.skillset = id
-                    SaveLoadout(roleId)
-                    UpdateUI()
-                    surface.PlaySound(SOUND_MENU_SELECT)
-                end
-            end
-        end
-
-        local function AddItemButton(id)
-            if SkillsetBlocksGun(config, state.loadout.skillset, id) then return end
-            local info = config.items[id]
-            local btn = vgui.Create("DButton", loadoutScroll)
-            btn:Dock(TOP)
-            btn:SetTall(MenuUnit(TRAITOR_LIST_BUTTON_HEIGHT))
-            btn:DockMargin(0, 0, 0, MenuUnit(TRAITOR_BUTTON_SPACING))
-            btn:SetText("")
-            btn.Paint = function(s, w, h)
-                local isSelected = table.HasValue(state.loadout.weapons, id)
-                local isDisabled = not isSelected and HasWeaponConflict(config, state.loadout.weapons, id)
-                local bgColor = isSelected and Color(100, 100, 100, 150) or Color(30, 30, 30, 150)
-                if s:IsHovered() and not isDisabled then
-                    bgColor = Color(150, 150, 150, 150)
-                end
-                draw.RoundedBox(0, 0, 0, w, h, bgColor)
-                surface.SetDrawColor(200, 200, 200, 50)
-                surface.DrawOutlinedRect(0, 0, w, h)
-                draw.SimpleText(info.name .. " (" .. info.cost .. " pts)", TRAITOR_MENU_FONT, MenuUnit(10), h / 2, isDisabled and Color(160, 160, 160) or Color(255, 255, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                if isDisabled then
-                    draw.RoundedBox(0, 0, 0, w, h, Color(0, 0, 0, 190))
-                end
-                if isSelected then
-                    draw.SimpleText("EQUIPPED", TRAITOR_MENU_FONT, w - MenuUnit(10), h / 2, Color(100, 255, 100), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
-                end
-            end
-            btn.OnCursorEntered = function()
-                UpdatePreview(id, false)
-            end
-            btn.DoClick = function()
-                local isDisabled = not table.HasValue(state.loadout.weapons, id) and HasWeaponConflict(config, state.loadout.weapons, id)
-                if isDisabled then
-                    surface.PlaySound("buttons/button10.wav")
-                    return
-                end
-                if table.HasValue(state.loadout.weapons, id) then
-                    table.RemoveByValue(state.loadout.weapons, id)
-                    local addonOrder = config.addonOrder[id]
-                    if addonOrder then
-                        for _, addonId in ipairs(addonOrder) do
-                            table.RemoveByValue(state.loadout.weapons, addonId)
-                        end
-                    end
                 else
-                    if currentPoints + info.cost > config.maxPoints then
+                    local selected = table.HasValue(state.loadout.weapons, id)
+                    if not selected and HasWeaponConflict(config, state.loadout.weapons, id) then
                         surface.PlaySound("buttons/button10.wav")
                         return
                     end
-                    table.insert(state.loadout.weapons, id)
+                    if selected then
+                        table.RemoveByValue(state.loadout.weapons, id)
+                        for _, addonId in ipairs(config.addonOrder[id] or {}) do
+                            table.RemoveByValue(state.loadout.weapons, addonId)
+                        end
+                    else
+                        if GetLoadoutPoints(config, state.loadout) + info.cost > config.maxPoints then
+                            surface.PlaySound("buttons/button10.wav")
+                            return
+                        end
+                        table.insert(state.loadout.weapons, id)
+                    end
                 end
+
+                state.loadout = SanitizeLoadout(config, state.loadout)
                 SaveLoadout(roleId)
                 UpdateUI()
                 surface.PlaySound(SOUND_MENU_SELECT)
             end
+        end
 
-            local addonOrder = config.addonOrder[id]
-            if addonOrder and table.HasValue(state.loadout.weapons, id) then
-                for _, addonId in ipairs(addonOrder) do
-                    local addonInfo = config.addons[addonId]
-                    if addonInfo then
-                        local addonBtn = vgui.Create("DButton", loadoutScroll)
-                        addonBtn:Dock(TOP)
-                        addonBtn:SetTall(MenuUnit(TRAITOR_ADDON_BUTTON_HEIGHT))
-                        addonBtn:DockMargin(MenuUnit(20), 0, 0, MenuUnit(TRAITOR_BUTTON_SPACING))
-                        addonBtn:SetText("")
-                        addonBtn.Paint = function(s, w, h)
-                            local isSelected = table.HasValue(state.loadout.weapons, addonId)
-                            local bgColor = isSelected and Color(100, 100, 100, 150) or Color(25, 25, 25, 150)
-                            if s:IsHovered() then
-                                bgColor = Color(140, 140, 140, 150)
-                            end
-                            draw.RoundedBox(0, 0, 0, w, h, bgColor)
-                            surface.SetDrawColor(200, 200, 200, 40)
-                            surface.DrawOutlinedRect(0, 0, w, h)
-                            draw.SimpleText("↳ " .. addonInfo.name .. " (" .. addonInfo.cost .. " pts)", TRAITOR_MENU_FONT, MenuUnit(10), h / 2, Color(235, 235, 235), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                            if isSelected then
-                                draw.SimpleText("EQUIPPED", TRAITOR_MENU_FONT, w - MenuUnit(10), h / 2, Color(100, 255, 100), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
-                            end
-                        end
-                        addonBtn.OnCursorEntered = function()
-                            UpdatePreview(addonId, false)
-                        end
-                        addonBtn.DoClick = function()
-                            if not table.HasValue(state.loadout.weapons, id) then
-                                surface.PlaySound("buttons/button10.wav")
-                                return
-                            end
-                            if table.HasValue(state.loadout.weapons, addonId) then
-                                table.RemoveByValue(state.loadout.weapons, addonId)
-                            else
-                                if currentPoints + addonInfo.cost > config.maxPoints then
-                                    surface.PlaySound("buttons/button10.wav")
-                                    return
-                                end
-                                table.insert(state.loadout.weapons, addonId)
-                            end
-                            SaveLoadout(roleId)
-                            UpdateUI()
-                            surface.PlaySound(SOUND_MENU_SELECT)
-                        end
+        local isTraitorLoadout = roleId == "traitor" or roleId == "traitor_soe" or roleId == "traitor_improvision"
+        local categories = {
+            ["HEAVY WEAPONS"] = {},
+            ["LIGHT WEAPONS"] = {},
+            ["TOOLS & MEDICAL"] = {},
+            ["ARMOR"] = {}
+        }
+        if isTraitorLoadout then categories["MELEE"] = {} end
+        for _, id in ipairs(config.itemOrder or {}) do
+            if config.items[id] and not SkillsetBlocksGun(config, state.loadout.skillset, id) then
+                local category = "TOOLS & MEDICAL"
+                if IsArmorItem(id) then
+                    category = "ARMOR"
+                else
+                    local swep = weapons.GetStored(id)
+                    local classCategory = string.lower((swep and swep.Category) or "")
+                    if isTraitorLoadout and classCategory:find("melee", 1, true) then
+                        category = "MELEE"
+                    elseif id == "weapon_vpo136" or id == "weapon_hg_crossbow" or id == "weapon_hg_bow" or classCategory:find("shotgun", 1, true) or classCategory:find("rifle", 1, true)
+                        or classCategory:find("sniper", 1, true) or classCategory:find("machine", 1, true)
+                        or classCategory:find("smg", 1, true) or classCategory:find("heavy", 1, true) then
+                        category = "HEAVY WEAPONS"
+                    elseif classCategory:find("pistol", 1, true) or classCategory:find("handgun", 1, true)
+                        or classCategory:find("melee", 1, true) or classCategory:find("sidearm", 1, true) then
+                        category = "LIGHT WEAPONS"
+                    end
+                end
+                table.insert(categories[category], id)
+            end
+        end
+
+        local categoryOrder = {}
+        if selectedVariant ~= "standard" then
+            table.insert(categoryOrder, "HEAVY WEAPONS")
+        end
+        table.insert(categoryOrder, "LIGHT WEAPONS")
+        if isTraitorLoadout then table.insert(categoryOrder, "MELEE") end
+        table.insert(categoryOrder, "TOOLS & MEDICAL")
+        table.insert(categoryOrder, "ARMOR")
+        for _, categoryName in ipairs(categoryOrder) do
+            local itemIds = categories[categoryName]
+            if #itemIds > 0 then
+                AddCategory(categoryName, itemIds, function(scroller)
+                    for _, id in ipairs(itemIds) do
+                        AddCard(scroller, id, config.items[id], false)
+                    end
+                end)
+            end
+        end
+
+        if config.skillsets and next(config.skillsets) then
+            local skillIds = {}
+            for _, id in ipairs(config.skillsetOrder or {}) do
+                if config.skillsets[id] then table.insert(skillIds, id) end
+            end
+            if #skillIds > 0 then
+                AddCategory("TRAITOR ABILITIES", skillIds, function(scroller)
+                    for _, id in ipairs(skillIds) do
+                        AddCard(scroller, id, config.skillsets[id], true)
+                    end
+                end)
+            end
+        end
+
+        local previewId = selectedPreviewId
+        if not previewId or not config.items[previewId] then
+            for _, itemId in ipairs(state.loadout.weapons) do
+                if config.items[itemId] then
+                    previewId = itemId
+                    break
+                end
+            end
+            if not previewId then
+                for _, itemId in ipairs(config.itemOrder or {}) do
+                    if config.items[itemId] then
+                        previewId = itemId
+                        break
                     end
                 end
             end
         end
 
-        AddCategory("WEAPONS & ITEMS")
-        for _, id in ipairs(config.itemOrder) do
-            if not IsArmorItem(id) then
-                AddItemButton(id)
-            end
+        if previewId and config.items[previewId] then
+            UpdatePreview(previewId, false)
         end
 
-        local hasArmor = false
-        for _, id in ipairs(config.itemOrder) do
-            if IsArmorItem(id) then
-                hasArmor = true
-                break
-            end
-        end
-
-        if hasArmor then
-            AddCategory("ARMOR")
-            for _, id in ipairs(config.itemOrder) do
-                if IsArmorItem(id) then
-                    AddItemButton(id)
-                end
-            end
+        if itemEditorSelectedId then
+            RefreshItemEditor(itemEditorSelectedId)
         end
     end
+
 
     UpdateUI()
 end
@@ -1402,10 +1870,10 @@ local function OpenHomicideMenu(rootPanel)
     header:SetFont("ZCity_Menu_Settings_Small")
     header:SetTextColor(color_whitey)
     header:SetPos(MenuUnit(48), MenuUnit(44))
-    header:SetText("LOADOUT")
+    header:SetText("ITEM")
     header:SizeToContents()
     header.OpenTime = CurTime()
-    header.TargetText = "LOADOUT"
+    header.TargetText = "ITEM"
     function header:Think()
         local elapsed = CurTime() - (self.OpenTime or CurTime())
         local charsToShow = math.floor(elapsed * 18)
@@ -1476,7 +1944,9 @@ local function OpenHomicideMenu(rootPanel)
         }
     }
 
-    for _, info in ipairs(cardData) do
+	local cardWidth = cardAreaW * 0.47
+
+    for cardIndex, info in ipairs(cardData) do
         local card = vgui.Create("DButton", cardArea)
         card:SetText("")
         card:SetSize(cardWidth, cardHeight)
@@ -1487,7 +1957,7 @@ local function OpenHomicideMenu(rootPanel)
         card.StartTime = CurTime()
         card.TargetX = info.align == "left" and cardAreaX or cardAreaX + cardAreaW - card.BaseW
         card.TargetY = cardAreaY
-        card:SetPos(info.align == "left" and -card.BaseW - cardOffscreenOffset or sw + cardOffscreenOffset, card.TargetY)
+        card:SetPos(cardIndex == 1 and -card.BaseW - cardOffscreenOffset or sw + cardOffscreenOffset, card.TargetY)
         card.Think = function(self)
             self.HoveredLerp = LerpFT(0.2, self.HoveredLerp or 0, self:IsHovered() and 1 or 0)
             self.AppearLerp = math.Clamp((CurTime() - self.StartTime) / 0.28, 0, 1)

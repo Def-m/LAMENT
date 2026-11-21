@@ -47,6 +47,12 @@ local HeroUpgradeData = {
 	["hero_mosin_ammo"] = {parent = "weapon_mosin", type = "ammo", extraClips = 1},
 }
 
+local HeroMedicalItems = {
+	["weapon_bandage_sh"] = true,
+	["weapon_medkit_sh"] = true,
+	["weapon_painkillers_tpik"] = true,
+}
+
 local function ParseLoadoutString(dataStr)
 	local loadout = {}
 	if dataStr and dataStr ~= "" then
@@ -84,10 +90,52 @@ local TraitorSkillsetSubRoles = {
 	["brawler"] = "traitor_brawler",
 }
 
+local ImprovisionWeapons = {
+	["weapon_hg_crossbow"] = true,
+	["weapon_zoraki"] = true,
+	["weapon_mp-80"] = true,
+	["weapon_tranquilizer"] = true,
+}
+
+local ImprovisionLoadoutItems = {
+	["weapon_traitor_poison1"] = true,
+	["weapon_adrenaline"] = true,
+	["weapon_walkie_talkie"] = true,
+	["weapon_hg_jam"] = true,
+	["weapon_traitor_poison_consumable"] = true,
+	["weapon_hg_crossbow_ammo"] = true,
+	["weapon_zoraki_ammo"] = true,
+	["weapon_mp-80_ammo"] = true,
+	["weapon_tranquilizer_ammo"] = true,
+}
+
+local TraitorAmmoUpgrades = {
+	["weapon_p22_ammo"] = {weapon = "weapon_p22"},
+	["weapon_pb_ammo"] = {weapon = "weapon_pb"},
+	["weapon_usp_ammo"] = {weapon = "weapon_usp"},
+	["weapon_taser_ammo"] = {weapon = "weapon_taser"},
+	["weapon_revolver357_ammo"] = {weapon = "weapon_revolver357"},
+	["weapon_draco_ammo"] = {weapon = "weapon_draco"},
+	["weapon_hg_crossbow_ammo"] = {weapon = "weapon_hg_crossbow", ammo = 4},
+	["weapon_zoraki_ammo"] = {weapon = "weapon_zoraki"},
+	["weapon_mp-80_ammo"] = {weapon = "weapon_mp-80"},
+	["weapon_tranquilizer_ammo"] = {weapon = "weapon_tranquilizer"},
+}
+
 local function ApplyCodeAttachments(weapon, attachments)
 	if not IsValid(weapon) or not istable(weapon.attachments) or not hg or not hg.SetAttachment then return end
 
 	for _, attachmentId in ipairs(attachments) do
+		local placement, definition
+		for attachmentPlacement, definitions in pairs(hg.attachments or {}) do
+			if definitions[attachmentId] then
+				placement = attachmentPlacement
+				definition = definitions[attachmentId]
+				break
+			end
+		end
+		if not placement then continue end
+		if hg.IsAttachmentCompatible and not hg.IsAttachmentCompatible(weapon, placement, attachmentId, definition) then continue end
 		hg.SetAttachment(weapon.attachments, attachmentId, weapon:GetClass())
 	end
 
@@ -95,12 +143,38 @@ local function ApplyCodeAttachments(weapon, attachments)
 	if weapon.SyncAtts then weapon:SyncAtts() end
 end
 
+local function ParseLoadoutAttachmentId(id)
+	if not isstring(id) then return end
+	return string.match(id, "^loadout_attachment:([^:]+):([^:]+)$")
+end
+
 local function ApplyTraitorLoadout(ply)
-	local loadout = ParseLoadoutString(ply:GetInfo("hmcd_traitor_loadout"))
-	if not loadout.skillset and not istable(loadout.weapons) then loadout = LegacyTraitorLoadout end
+	local convarName = MODE.Type == "improvision" and "hmcd_improvision_traitor_loadout"
+		or MODE.Type == "soe" and "hmcd_soe_traitor_loadout"
+		or "hmcd_traitor_loadout"
+	local loadout = ParseLoadoutString(ply:GetInfo(convarName))
+	if not loadout.skillset and not istable(loadout.weapons) then
+		loadout = MODE.Type == "improvision" and {skillset = "none", weapons = {"weapon_tranquilizer"}} or LegacyTraitorLoadout
+	end
 
 	local skillset = loadout.skillset or "none"
-	local weaponsList = loadout.weapons or {}
+	local weaponsList = istable(loadout.weapons) and loadout.weapons or {}
+	if MODE.Type == "improvision" then
+		local selectedWeapon
+		local filteredWeapons = {}
+		for _, weaponId in ipairs(weaponsList) do
+			local attachmentParent = ParseLoadoutAttachmentId(weaponId)
+			if ImprovisionWeapons[weaponId] then
+				selectedWeapon = selectedWeapon or weaponId
+			elseif ImprovisionLoadoutItems[weaponId] then
+				table.insert(filteredWeapons, weaponId)
+			elseif attachmentParent and ImprovisionWeapons[attachmentParent] then
+				table.insert(filteredWeapons, weaponId)
+			end
+		end
+		table.insert(filteredWeapons, selectedWeapon or "weapon_tranquilizer")
+		weaponsList = filteredWeapons
+	end
 	ply.SubRole = TraitorSkillsetSubRoles[skillset] or ply.SubRole
 
 	ply.organism.stamina.max = 220
@@ -135,8 +209,16 @@ local function ApplyTraitorLoadout(ply)
 	local hasP22 = false
 	local hasPL15 = false
 	local hasTaser = false
+	local loadoutAttachments = {}
 
 	for _, wep in pairs(weaponsList) do
+		local attachmentParent, attachmentId = ParseLoadoutAttachmentId(wep)
+		if attachmentParent and attachmentId then
+			loadoutAttachments[attachmentParent] = loadoutAttachments[attachmentParent] or {}
+			table.insert(loadoutAttachments[attachmentParent], attachmentId)
+			continue
+		end
+
 		if wep == "weapon_p22_silencer" then
 			timer.Simple(0.5, function()
 				if IsValid(ply) and ply:HasWeapon("weapon_p22") then
@@ -151,22 +233,17 @@ local function ApplyTraitorLoadout(ply)
 					ApplyCodeAttachments(w, {"supressor2"})
 				end
 			end)
-		elseif wep == "weapon_p22_ammo" then
-			timer.Simple(0.5, function()
-				if IsValid(ply) and ply:HasWeapon("weapon_p22") then
-					local w = ply:GetWeapon("weapon_p22")
-					if IsValid(w) and w:GetPrimaryAmmoType() >= 0 then
-						ply:GiveAmmo(w:GetMaxClip1(), w:GetPrimaryAmmoType(), true)
-					end
-				end
-			end)
-		elseif wep == "weapon_pb_ammo" then
-			timer.Simple(0.5, function()
-				if IsValid(ply) and ply:HasWeapon("weapon_pb") then
-					local w = ply:GetWeapon("weapon_pb")
-					if IsValid(w) and w:GetPrimaryAmmoType() >= 0 then
-						ply:GiveAmmo(w:GetMaxClip1(), w:GetPrimaryAmmoType(), true)
-					end
+		elseif TraitorAmmoUpgrades[wep] then
+			local upgrade = TraitorAmmoUpgrades[wep]
+			timer.Simple(1.5, function()
+				if not IsValid(ply) or not ply:HasWeapon(upgrade.weapon) then return end
+				local weapon = ply:GetWeapon(upgrade.weapon)
+				if not IsValid(weapon) then return end
+
+				local ammoType = weapon:GetPrimaryAmmoType()
+				local ammoAmount = upgrade.ammo or weapon:GetMaxClip1()
+				if ammoType >= 0 and ammoAmount > 0 then
+					ply:GiveAmmo(ammoAmount, ammoType, true)
 				end
 			end)
 		else
@@ -188,11 +265,22 @@ local function ApplyTraitorLoadout(ply)
 				end
 			end
 		end
+
+	end
+
+	for weaponClass, attachments in pairs(loadoutAttachments) do
+		local selectedAttachments = table.Copy(attachments)
+		timer.Simple(0.5, function()
+			if not IsValid(ply) or not ply:HasWeapon(weaponClass) then return end
+			local weapon = ply:GetWeapon(weaponClass)
+			if IsValid(weapon) then ApplyCodeAttachments(weapon, selectedAttachments) end
+		end)
 	end
 end
 
 local function ApplyHeroLoadout(ply)
-	local loadout = ParseLoadoutString(ply:GetInfo("hmcd_hero_loadout"))
+	local convarName = MODE.Type == "soe" and "hmcd_soe_hero_loadout" or "hmcd_hero_loadout"
+	local loadout = ParseLoadoutString(ply:GetInfo(convarName))
 	local weaponsList = istable(loadout.weapons) and loadout.weapons or {}
 	local selectedWeapon = "weapon_px4beretta"
 
@@ -229,6 +317,11 @@ local function ApplyHeroLoadout(ply)
 	local attachments = {}
 
 	for _, weaponId in ipairs(weaponsList) do
+		if HeroMedicalItems[weaponId] then
+			ply:Give(weaponId)
+			continue
+		end
+
 		if weaponId == "weapon_walkie_talkie" then
 			ply:Give("weapon_walkie_talkie")
 			continue
@@ -237,6 +330,14 @@ local function ApplyHeroLoadout(ply)
 		if string.StartWith(weaponId, "ent_armor_") then
 			if hg and hg.AddArmor then
 				hg.AddArmor(ply, weaponId)
+			end
+			continue
+		end
+
+		local attachmentParent, attachmentId = ParseLoadoutAttachmentId(weaponId)
+		if attachmentParent then
+			if attachmentParent == selectedWeapon and attachmentId then
+				attachments[#attachments + 1] = attachmentId
 			end
 			continue
 		end
@@ -405,6 +506,12 @@ MODE.RoleChooseRoundTypes = {
 		},
 		Professions = MODE.ProfessionsPool,
 	},
+	["improvision"] = {
+		TraitorDefaultRole = "traitor_custom",
+		Traitor = {
+			["traitor_custom"] = true,
+		},
+	},
 }
 --//
 
@@ -427,6 +534,26 @@ MODE.Roles.standard = {
 		color = Color(0,120,190)
 	},
 }
+
+MODE.Roles.soe = {
+	traitor = {
+		objective = "Eliminate everyone before the Vigilante stops you.",
+		name = "Executioner",
+		color = Color(190, 0, 0)
+	},
+	gunner = {
+		objective = "You are the Vigilante. Stop the Executioner.",
+		name = "Vigilante",
+		color = Color(158, 0, 190)
+	},
+	innocent = {
+		name = "Victim",
+		color = Color(0, 120, 190)
+	},
+}
+
+MODE.Roles.improvision = table.Copy(MODE.Roles.soe)
+MODE.Roles.improvision.traitor.objective = "Use your limited weapon options to eliminate everyone before the Vigilante stops you."
 
 MODE.Roles.suicidelunatic = {
 	traitor = {

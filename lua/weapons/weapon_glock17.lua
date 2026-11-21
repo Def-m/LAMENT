@@ -10,7 +10,7 @@ SWEP.Slot = 2
 SWEP.SlotPos = 10
 
 SWEP.ViewModel = ""
-SWEP.WorldModel = "models/weapons/w_pist_deagle.mdl"
+SWEP.WorldModel = "models/weapons/w_pist_glock18.mdl"
 SWEP.WorldModelFake = "models/weapons/c_glock.mdl"
 
 SWEP.FakePos = Vector(-22, 2.34, 4.32)

@@ -48,7 +48,7 @@ function WS.GetWeaponTable( ply )
     local currentWeapons = ply:GetWeapons()
     local cache = WS.WeaponTableCache
     local validCount = 0
-    local cacheValid = cache and cache.ply == ply
+    local cacheValid = cache and cache.ply == ply and istable(cache.meta)
 
     for _, wep in ipairs(currentWeapons) do
         if not IsValid(wep) then continue end
@@ -62,7 +62,16 @@ function WS.GetWeaponTable( ply )
             end
         end
     end
-    if cacheValid and cache.count == validCount then return cache.formatted end
+    if cacheValid and cache.count == validCount and istable(cache.formatted) then
+        for slot = 0, 5 do
+            local slotTbl = cache.formatted[slot]
+            if not istable(slotTbl) or not isnumber(slotTbl.count) then
+                cacheValid = false
+                break
+            end
+        end
+        if cacheValid then return cache.formatted end
+    end
 
     local WeaponsGet = {}
     for _, wep in ipairs(currentWeapons) do
@@ -108,17 +117,32 @@ function WS.GetWeaponTable( ply )
     return FormatedTable
 end
 
+local function WS_GetSlotCount(slotTbl)
+    if not istable(slotTbl) then return 0 end
+
+    local count = tonumber(slotTbl.count)
+    if count then return math.max(0, math.floor(count)) end
+
+    count = 0
+    while slotTbl[count] ~= nil do
+        count = count + 1
+    end
+    return count
+end
+
 local function WS_FindWeapon(Weapons, target)
-    if not IsValid(target) then return end
+    if not istable(Weapons) or not IsValid(target) then return end
     for slot = 0, 5 do
         local slotTbl = Weapons[slot]
-        for pos = 0, slotTbl.count - 1 do
+        for pos = 0, WS_GetSlotCount(slotTbl) - 1 do
             if slotTbl[pos] == target then return slot, pos end
         end
     end
 end
 
 local function WS_SelectFallback(Weapons, ply)
+    if not istable(Weapons) or not IsValid(ply) then return end
+
     local slot, pos = WS_FindWeapon(Weapons, ply:GetActiveWeapon())
     if slot then
         WS.SelectedSlot, WS.SelectedSlotPos = slot, pos
@@ -126,7 +150,7 @@ local function WS_SelectFallback(Weapons, ply)
     end
 
     for fallbackSlot = 0, 5 do
-        if Weapons[fallbackSlot].count > 0 then
+        if WS_GetSlotCount(Weapons[fallbackSlot]) > 0 then
             WS.SelectedSlot, WS.SelectedSlotPos = fallbackSlot, 0
             return Weapons[fallbackSlot][0]
         end
@@ -606,7 +630,7 @@ function WS.WeaponSelectorDraw( ply )
     WS.SlotBadgeAnim = WS.SlotBadgeAnim or {}
     for i = 0, 5 do
         local slotTbl = Weapons[i]
-        if slotTbl.count < 1 then continue end
+        if WS_GetSlotCount(slotTbl) < 1 then continue end
         AmmoutSlots = AmmoutSlots + 1
     end
     local columnIndex = 0
@@ -621,7 +645,8 @@ function WS.WeaponSelectorDraw( ply )
 
     for i = 0, 5 do
         local slotTbl = Weapons[i]
-        if slotTbl.count < 1 then continue end
+        local slotCount = WS_GetSlotCount(slotTbl)
+        if slotCount < 1 then continue end
         local position = groupX + columnIndex * (sizeX + columnGap)
         local rowY = firstRowY
         local badgeTarget = i == WS.SelectedSlot and 1 or 0
@@ -632,7 +657,7 @@ function WS.WeaponSelectorDraw( ply )
             WS_DrawSlotBadge(i + 1, position, firstRowY, sizeX, WS.Transparent * badgeFade, AcsentColor)
         end
 
-        for Id = 0, slotTbl.count - 1 do
+        for Id = 0, slotCount - 1 do
             local wepId = Id
             local wep = slotTbl[wepId]
             if not wep then continue end
@@ -801,13 +826,15 @@ local tAcceptKeys = {
 }
 
 local function WS_StepSelection(Weapons, direction, useCurrentSelection)
+    if not istable(Weapons) then return false end
+
     local ordered = {}
     local currentIndex
     local selected = useCurrentSelection and WS.GetSelectedWeapon(Weapons) or nil
 
     for slot = 0, 5 do
         local slotTbl = Weapons[slot]
-        for pos = 0, slotTbl.count - 1 do
+        for pos = 0, WS_GetSlotCount(slotTbl) - 1 do
             ordered[#ordered + 1] = {wep = slotTbl[pos], slot = slot, pos = pos}
             if slotTbl[pos] == selected then currentIndex = #ordered end
         end
@@ -869,9 +896,10 @@ function WS.ChangeSelectionWep( ply, key, pressed, code )
     if iPos or key == "invnext" or key == "invprev" or key == "lastinv" then
 
         local Weapons = WS.GetWeaponTable( ply )
+        if not istable(Weapons) then return true end
         if iPos then
             local slotTbl = Weapons[iPos - 1]
-            if not slotTbl or slotTbl.count < 1 then return true end
+            if WS_GetSlotCount(slotTbl) < 1 then return true end
         end
         if key == "lastinv" and not IsValid(WS.LastInv) then return end
 
@@ -886,7 +914,7 @@ function WS.ChangeSelectionWep( ply, key, pressed, code )
             iPos = iPos - 1
             local slotTbl = Weapons[iPos]
             local continueSlot = selectorWasOpen and WS.SelectedSlot == iPos and WS.SelectedSlotPos >= 0
-            WS.SelectedSlotPos = continueSlot and (WS.SelectedSlotPos + 1) % slotTbl.count or 0
+            WS.SelectedSlotPos = continueSlot and (WS.SelectedSlotPos + 1) % WS_GetSlotCount(slotTbl) or 0
             WS.SelectedSlot = iPos
         elseif key == "invprev" then
             WS_StepSelection(Weapons, -1, selectorWasOpen)

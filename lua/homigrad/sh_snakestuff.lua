@@ -201,7 +201,8 @@ if CLIENT then
 				local r,g,b,a = LerpColor(i / #poses_right,color,color2)
 				surface.SetDrawColor(r,g,b,a)
 				hg.drawPart(segments[i],r,g,b,a)
-				if poses_right[i] then
+				-- the last segment has no "next" vertices; drawing it handed DrawPoly a table with holes
+				if poses_right[i] and poses_left[i] and poses_right[i+1] and poses_left[i+1] then
 					local poly = {
 						poses_left[i+1],
 						poses_right[i],

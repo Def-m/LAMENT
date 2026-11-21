@@ -204,7 +204,6 @@ SWEP.AnimShootMul = 3
 
 SWEP.podkid = 1
 
-SWEP.StartAtt = {"holo16"}
 SWEP.availableAttachments = {
 	barrel = {
 		[1] = {"supressor2", Vector(0, 0.0, 0), {}},

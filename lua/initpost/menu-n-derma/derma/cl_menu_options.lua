@@ -10,6 +10,7 @@ local hg_font_default = "Lora"
 local hg_font = ConVarExists("hg_font") and GetConVar("hg_font") or CreateClientConVar("hg_font", hg_font_default, true, false, "change every text font to selected because ui customization is cool")
 local hg_oldradialmenu = CreateClientConVar("hg_oldradialmenu", "0", true, false, "use the old radial menu style", 0, 1)
 local hg_hold_shift_sprint = ConVarExists("hg_hold_shift_sprint") and GetConVar("hg_hold_shift_sprint") or CreateClientConVar("hg_hold_shift_sprint", "0", true, true, "Disable jogging, holding shift will make you sprint.", 0, 1)
+local hg_quickdraw_alt = ConVarExists("hg_quickdraw_alt") and GetConVar("hg_quickdraw_alt") or CreateClientConVar("hg_quickdraw_alt", "0", true, true, "Off: hold Shift while equipping a pistol to draw it fast and one-handed. On: hold Alt instead.", 0, 1)
 local hg_reduce_screeneffects = ConVarExists("hg_reduce_screeneffects") and GetConVar("hg_reduce_screeneffects") or CreateClientConVar("hg_reduce_screeneffects", "0", true, false, "Reduce screen shader effects by 50%", 0, 1)
 
 local function ForceHGFirstPersonDeath()
@@ -172,6 +173,7 @@ hg.settings:AddOpt("Weapons","hg_dynamic_mags", "Dynamic Ammo Inspect")
 hg.settings:AddOpt("Weapons","hg_zoomsensitivity", "Scope sensitivity")
 hg.settings:AddOpt("Weapons","hg_highpitchgunfire", "Toggle high pitched gunfire sounds inside buildings")
 hg.settings:AddOpt("Weapons","hg_nofovzoom", "Disable/Enable FOV Zoom")
+hg.settings:AddOpt("Weapons","hg_quickdraw_alt", "Pistol quick draw uses Alt instead of Shift")
 
 hg.settings:AddOpt("View","hg_fov", "Field Of View")
 hg.settings:AddOpt("View","hg_newspectate", "Smooth Spectator Camera")

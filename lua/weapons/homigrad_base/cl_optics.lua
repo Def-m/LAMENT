@@ -217,7 +217,7 @@ end
 function PixelateThermalView(size)
 	local wep = RENDERING_SCOPE
 	local sight = IsValid(wep) and wep:HasAttachment("sight", "optic")
-	local sensor = sight and thermalSensors[sight[1]]
+	local sensor = istable(sight) and thermalSensors[sight[1]]
 	if not sensor then return end
 
 	DrawThermalSensor(size, sensor, true)

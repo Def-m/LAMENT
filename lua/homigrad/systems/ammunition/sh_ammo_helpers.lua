@@ -110,40 +110,6 @@ local function postpenetration_blood(self, new_vel_normal, len, ricochet, ang_di
 end
 
 
-local function onstopped_silk(self, last_unsure_penetration_pos, reason, trace)
-	if(SERVER)then
-		if(!trace or !trace.HitSky)then
-			local normal = self.Vel:GetNormalized()
-			local projectile = ents.Create(self.FunctionInfo.Ent)
-			projectile:SetPos(self.Pos)
-			projectile:SetAngles(normal:Angle())
-			projectile:Spawn()
-			self.SpawnedEntity = projectile
-
-			if(trace)then
-				projectile:Hit(trace.Entity, trace.HitPos - normal * 10, trace.PhysicsBone, normal)
-			end
-		end
-	end
-end
-
-local function arrow_hit(self, last_unsure_penetration_pos, reason, trace)
-	if(SERVER)then
-		if(!trace or !trace.HitSky)then
-			local normal = -self.Vel:GetNormalized()
-			local projectile = ents.Create(self.FunctionInfo.Ent)
-			projectile:SetPos(self.Pos)
-			projectile:SetAngles(normal:Angle())
-			projectile:Spawn()
-			self.SpawnedEntity = projectile
-			
-			if(trace)then
-				projectile:Hit(trace.Entity, trace.HitPos + normal * -4, trace.PhysicsBone, normal)
-			end
-		end
-	end
-end
-
 --=\\Scheduled explosions
 APScheduledExplosions = APScheduledExplosions or {}
 
@@ -157,27 +123,6 @@ end)
 --=//
 
 --=\\Explosive Projectile
-local function draw_explosive(self)
-	if(IsValid(self.Draw_Model))then
-		--
-	else
-		local model_ent = ClientsideModel(self.FunctionInfo.Model)
-		self.Draw_Model = model_ent
-	end
-	
-	local model_ent = self.Draw_Model
-	local vel_ang = self.Vel:Angle()
-	
-	model_ent:SetPos(self.Pos)
-	model_ent:SetAngles(vel_ang)
-end
-
-local function preremove_explosive(self)
-	if(IsValid(self.Draw_Model))then
-		self.Draw_Model:Remove()
-	end
-end
-
 local function onstopped_explosive(self, last_unsure_penetration_pos, reason, trace)
 	if(SERVER)then
 		if(!trace or !trace.HitSky)then

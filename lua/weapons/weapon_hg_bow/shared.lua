@@ -20,6 +20,7 @@ SWEP.supportTPIK = true
 SWEP.weaponPos = Vector(0,0,0)
 SWEP.weaponAng = Angle(0,0,0)
 SWEP.animtime = 0
+SWEP.AimAnimationDuration = 0.8
 SWEP.animspeed = 0
 SWEP.cycling = false
 SWEP.reverseanim = false

@@ -52,10 +52,10 @@ matproxy.Add({
 hook.Add("radialOptions", "ReloadOnFloor", function()
 	if !lply:Alive() or !lply.organism or lply.organism.otrub then return end
 	local org = lply.organism
-	if org.pain > 50 or (org.rarmamputated and org.larmamputated) then return end
+	if (tonumber(org.pain) or 0) > 50 or (org.rarmamputated and org.larmamputated) then return end
 	local ent = (IsValid(hg.eyeTrace(lply).Entity) and hg.eyeTrace(lply).Entity) or (IsValid(lply:GetNetVar("carryent")) and lply:GetNetVar("carryent"))
 	if not IsValid(ent) then return end
-	if not ishgweapon(ent) then return end
+	if not ishgweapon(ent) or not ent.Primary then return end
 	local clip, maxclip = ent:Clip1(), ent:GetMaxClip1()
 	local isshotgun = (ent.Base == "weapon_m4super" or ent:GetClass() == "weapon_m4super")
 	if ((clip < maxclip or lply:GetAmmoCount(ent.Primary.Ammo) > 0) or (isshotgun and not ent.drawBullet)) then
@@ -74,17 +74,17 @@ end)
 hook.Add("radialOptions", "PlaceBipod", function()
 	if !lply:Alive() or !lply.organism or lply.organism.otrub then return end
 	local org = lply.organism
-	if org.pain > 50 or (org.rarmamputated and org.larmamputated) then return end
+	if (tonumber(org.pain) or 0) > 50 or (org.rarmamputated and org.larmamputated) then return end
 	local ent = lply:GetActiveWeapon()
 	if not IsValid(ent) then return end
 	if not ishgweapon(ent) then return end
-	local clip, maxclip = ent:Clip1(), ent:GetMaxClip1()
-	if ent.CanRest and ent:CanRest() or ent.IsResting and ent:IsResting() then
+	local resting = ent.IsResting and ent:IsResting() or false
+	if (ent.CanRest and ent:CanRest()) or resting then
 		local tbl = {
 			function()
 				RunConsoleCommand("hg_place_bipod")
 			end,
-			ent:IsResting() and "Pickup bipod" or "Place bipod"
+			resting and "Pickup bipod" or "Place bipod"
 		}
 		hg.radialOptions[#hg.radialOptions + 1] = tbl
 	end

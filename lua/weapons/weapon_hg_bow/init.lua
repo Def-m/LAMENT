@@ -13,6 +13,7 @@ local bashvpang = Angle(-8,0,0)
 -- self:PlayAnim(anim,time,cycling,callback,reverse,sendtoclient)
 function SWEP:PrimaryAttack()
 	if self.CurState == 0.5 then return end
+	if self.AimReadyAt and CurTime() < self.AimReadyAt then return end
 	local ply = self:GetOwner()
 	if not hg.CanUseLeftHand(ply) or not hg.CanUseRightHand(ply) then return end
 
@@ -98,6 +99,7 @@ function SWEP:ThinkAdd()
 	local wallblock = tr.Fraction <= 0.4
 	if (ply:IsSprinting() or wallblock) and self.CurState == 1 then
 		self.CurState = 0
+		self.AimReadyAt = nil
 	end
 
 	if string.find(self.anim, "empty") and ply:GetAmmoCount("Arrow") > 0 then
@@ -112,18 +114,22 @@ function SWEP:ThinkAdd()
 	if hg.KeyDown(ply, IN_ATTACK2) and not ply:IsSprinting() and not wallblock and handscheck then
 		if self.CurState == -1 and self.CurState ~= 0.5 then
 			self.CurState = 0.5
-			self:PlayAnim(ply:GetAmmoCount("Arrow") == 0 and "idle_to_aim_empty" or "idle_to_aim")
+			self.AimReadyAt = CurTime() + self.AimAnimationDuration
+			local aimAnim = ply:GetAmmoCount("Arrow") == 0 and "idle_to_aim_empty" or "idle_to_aim"
+			self:PlayAnim(aimAnim)
 			--self:SoundEmit("weapons/bow_deerhunter/bow_pullback_0".. (math.random(2) == 2 and 3 or 1) ..".wav")
 		end
 	else
 		if self.CurState == 1 and self.CurState ~= 0.5 and not ply:IsSprinting() then
 			self.CurState = 0.5
+			self.AimReadyAt = nil
 			self:PlayAnim(ply:GetAmmoCount("Arrow") == 0 and "aim_to_idle_empty" or "aim_to_idle")
 			self:SoundEmit("weapons/bow_deerhunter/bow_pullback_0".. (math.random(2) == 2 and 2 or 4) ..".wav", 55)
 		end
 
 		if self.CurState == 0 then
 			self.CurState = 0.5
+			self.AimReadyAt = nil
 			self:PlayAnim(ply:GetAmmoCount("Arrow") == 0 and "aim_to_idle_empty" or "aim_to_idle")
 			self:SoundEmit("weapons/bow_deerhunter/bow_pullback_0".. (math.random(2) == 2 and 2 or 4) ..".wav", 55)
 		end

@@ -9,7 +9,7 @@ SWEP.Category = "Weapons - Pistols"
 SWEP.Slot = 2
 SWEP.SlotPos = 10
 
-SWEP.WorldModel = "models/weapons/w_pist_deagle.mdl"
+SWEP.WorldModel = "models/weapons/w_pist_glock18.mdl"
 SWEP.WorldModelFake = "models/weapons/c_glock.mdl"
 SWEP.GlockBodygroups = {1, 10, 4, 0, 0, 0, 0, 0, 0, 1}
 

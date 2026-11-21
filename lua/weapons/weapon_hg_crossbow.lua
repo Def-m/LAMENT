@@ -109,6 +109,7 @@ SWEP.scope_blackout = 330
 SWEP.rot = 0
 SWEP.FOVMin = 6
 SWEP.FOVMax = 15
+SWEP.ZoomFOV = 10
 SWEP.perekrestieSize = false
 SWEP.blackoutsize = 3100
 
@@ -203,9 +204,281 @@ end
 SWEP.dort = true
 
 if CLIENT then
-	function SWEP:DrawHUDAdd()
-		//self:DoRT()
+	-- ===== Scope =====
+	-- The crossbow renders its own scope picture into its own render target and puts it on the
+	-- model's lens. The lens slot is found in game: the first time you aim, the part of the model
+	-- under the middle of the screen is the lens. The base DoRT is not used here: it blacks the
+	-- whole picture out whenever the eye isn't lined up with localScopePos.
+	local RT_SIZE = 640
+	local scopeRT = GetRenderTargetEx("hg_crossbow_scope_640", RT_SIZE, RT_SIZE,
+		RT_SIZE_NO_CHANGE,
+		MATERIAL_RT_DEPTH_SHARED,
+		bit.bor(2, 256),
+		0,
+		IMAGE_FORMAT_BGR888
+	)
+	local scopeMat = CreateMaterial("hg_crossbow_scope_v1", "UnlitGeneric", {
+		["$basetexture"] = scopeRT:GetName(),
+		["$model"] = 1,
+	})
+	local scopeMatName = "!hg_crossbow_scope_v1"
+	SWEP.mat = scopeMat
+
+	local cvLensSlot = CreateClientConVar("hg_crossbow_lens_slot", "-1", true, false, "Crossbow scope: model material slot used as the lens (-1 = find it automatically when you aim)", -1, 31)
+	local lensKeywords = {"lens", "glass"}
+
+	-- tiny offscreen target used to find which material slot sits in the middle of the screen
+	local pickRT = GetRenderTargetEx("hg_crossbow_lenspick_16", 16, 16,
+		RT_SIZE_LITERAL,
+		MATERIAL_RT_DEPTH_SEPARATE,
+		0,
+		0,
+		IMAGE_FORMAT_RGBA8888
+	)
+	-- no $basetexture: UnlitGeneric falls back to plain white, tinted by $color/$color2
+	local pickWhite = CreateMaterial("hg_crossbow_pick_white_v2", "UnlitGeneric", {
+		["$model"] = 1,
+	})
+	local pickBlack = CreateMaterial("hg_crossbow_pick_black_v2", "UnlitGeneric", {
+		["$color"] = "[0 0 0]",
+		["$color2"] = "[0 0 0]",
+		["$model"] = 1,
+	})
+
+	local function ClearPickOverrides(slotCount)
+		for i = 0, slotCount - 1 do
+			render.MaterialOverrideByIndex(i, nil)
+		end
 	end
+
+	-- whiteSlot: a slot number, true (every slot white) or false (every slot black)
+	local function SampleCentre(model, view, slotCount, whiteSlot)
+		render.Clear(0, 0, 0, 255, true, true)
+		cam.Start3D(view.origin, view.angles, 2, 0, 0, 16, 16, 0.5, 512)
+			for i = 0, slotCount - 1 do
+				render.MaterialOverrideByIndex(i, (whiteSlot == true or whiteSlot == i) and pickWhite or pickBlack)
+			end
+			model:DrawModel()
+			ClearPickOverrides(slotCount)
+		cam.End3D()
+		render.CapturePixels()
+		local r, g, b = render.ReadPixel(8, 8)
+		return ((r or 0) + (g or 0) + (b or 0)) / 3
+	end
+
+	local function DetectLensSlot(model, view)
+		local slotCount = #model:GetMaterials()
+		if slotCount == 0 then return nil, "the model has no materials" end
+
+		local oldFog = render.GetFogMode()
+		render.FogMode(MATERIAL_FOG_NONE)
+		render.SetColorModulation(1, 1, 1)
+		render.SetBlend(1)
+		render.PushRenderTarget(pickRT)
+		local ok, slot, reason = pcall(function()
+			local white = SampleCentre(model, view, slotCount, true)
+			local black = SampleCentre(model, view, slotCount, false)
+			if white - black < 30 then return nil, "the crossbow isn't in the middle of the screen (white " .. math.Round(white) .. ", black " .. math.Round(black) .. ")" end
+			local threshold = (white + black) / 2
+			for i = 0, slotCount - 1 do
+				if SampleCentre(model, view, slotCount, i) >= threshold then return i end
+			end
+			return nil, "no material slot matched"
+		end)
+		render.PopRenderTarget()
+		ClearPickOverrides(slotCount)
+		render.FogMode(oldFog)
+
+		if not ok then return nil, tostring(slot) end
+		return slot, reason
+	end
+
+	function SWEP:GetScopeLensSlot(model)
+		local forced = cvLensSlot:GetInt()
+		if forced >= 0 then return forced end
+		if model.hgDetectedLensSlot then return model.hgDetectedLensSlot end
+
+		if model.hgKeywordLensModel != model:GetModel() then
+			model.hgKeywordLensModel = model:GetModel()
+			model.hgKeywordLensSlot = nil
+			for index, name in ipairs(model:GetMaterials()) do
+				local lower = string.lower(name)
+				for _, keyword in ipairs(lensKeywords) do
+					if string.find(lower, keyword, 1, true) then
+						model.hgKeywordLensSlot = index - 1
+						break
+					end
+				end
+				if model.hgKeywordLensSlot then break end
+			end
+		end
+
+		return model.hgKeywordLensSlot
+	end
+
+	function SWEP:ApplyScopeLens(model)
+		model = model or self:GetWM()
+		if not IsValid(model) then return end
+
+		local slot = self:GetScopeLensSlot(model)
+		if model.hgScopeLensSlot != slot then
+			-- put the previous slot back to its own material
+			if model.hgScopeLensSlot and model:GetSubMaterial(model.hgScopeLensSlot) == scopeMatName then
+				model:SetSubMaterial(model.hgScopeLensSlot, "")
+			end
+			model.hgScopeLensSlot = slot
+		end
+
+		if slot and model:GetSubMaterial(slot) != scopeMatName then
+			model:SetSubMaterial(slot, scopeMatName)
+		end
+	end
+
+	function SWEP:UpdateLensDetection(model)
+		if cvLensSlot:GetInt() >= 0 or model.hgLensDetectDone then return end
+
+		if not self:IsZoom() or GetViewEntity() != LocalPlayer() then
+			self.hgLensAimStart = nil
+			return
+		end
+
+		self.hgLensAimStart = self.hgLensAimStart or CurTime()
+		if CurTime() - self.hgLensAimStart < 0.4 or (model.hgLensRetryAt or 0) > CurTime() then return end
+
+		local slot, reason = DetectLensSlot(model, render.GetViewSetup(true))
+		if slot then
+			model.hgLensDetectDone = true
+			model.hgDetectedLensSlot = slot
+			print("[Crossbow] scope lens found on material slot " .. slot .. " (" .. tostring(model:GetMaterials()[slot + 1]) .. ")")
+			return
+		end
+
+		model.hgLensTries = (model.hgLensTries or 0) + 1
+		model.hgLensRetryAt = CurTime() + 1
+		if model.hgLensTries >= 3 then
+			model.hgLensDetectDone = true
+			print("[Crossbow] couldn't find the scope lens automatically (" .. tostring(reason) .. "). Run hg_crossbow_materials, then set hg_crossbow_lens_slot <slot> or cycle with hg_crossbow_lens_next.")
+		end
+	end
+
+	function SWEP:DrawHUDAdd()
+		local model = self:GetWM()
+		if not IsValid(model) then return end
+
+		self:UpdateLensDetection(model)
+		self:ApplyScopeLens(model)
+	end
+
+	local scopeErrorPrinted = false
+	function SWEP:DoRT()
+		LOW_RENDER = nil
+
+		local owner = self:GetOwner()
+		if not IsValid(owner) or owner != LocalPlayer() then return end
+
+		local pos, ang = self:GetTrace(true, nil, nil, true)
+		if not isvector(pos) or not isangle(ang) then return end
+
+		self.isscoping = true
+
+		-- scope camera sits at the scope, pulled back out of walls like the base scopes do
+		local scopePos = LocalToWorld(self.localScopePos, angle_zero, pos, ang)
+		local eyePos = owner:EyePos()
+		local dir = scopePos - eyePos
+		local dirNorm = dir:GetNormalized()
+		local tr = util.QuickTrace(eyePos, dir + dirNorm * 5, {owner, owner.FakeRagdoll})
+		local origin = owner:InVehicle() and scopePos or tr.HitPos - dirNorm * 5
+
+		render.PushRenderTarget(scopeRT, 0, 0, RT_SIZE, RT_SIZE)
+		render.Clear(0, 0, 0, 255)
+
+		RENDERING_SCOPE = self
+		local ok, err = pcall(render.RenderView, {
+			x = 0,
+			y = 0,
+			w = RT_SIZE,
+			h = RT_SIZE,
+			origin = origin,
+			angles = ang,
+			fov = math.Clamp(self.ZoomFOV or 10, 1, 90),
+			znear = 1,
+			zfar = zfar,
+			drawviewmodel = false,
+			drawhud = false,
+			dopostprocess = false,
+			bloomtone = false,
+		})
+		RENDERING_SCOPE = false
+
+		-- reticle and vignette are always centred: the camera looks straight down the barrel
+		cam.Start2D()
+			local reticleSize = (self.sizeperekrestie * RT_SIZE / 512) / ((self.perekrestieSize and 4) or (self.FOVMax or 10) / 3)
+			surface.SetDrawColor(255, 255, 255, 255)
+			surface.SetMaterial(self.perekrestie)
+			surface.DrawTexturedRectRotated(RT_SIZE / 2, RT_SIZE / 2, reticleSize, reticleSize, self.rot or 0)
+
+			local vignetteSize = (self.blackoutsize or 3100) * 0.9 * 0.75 * RT_SIZE / 512 + 512
+			surface.SetDrawColor(0, 0, 0, 255)
+			surface.SetMaterial(self.scopemat)
+			surface.DrawTexturedRect((RT_SIZE - vignetteSize) / 2, (RT_SIZE - vignetteSize) / 2, vignetteSize, vignetteSize)
+		cam.End2D()
+
+		render.PopRenderTarget()
+
+		if not ok and not scopeErrorPrinted then
+			scopeErrorPrinted = true
+			ErrorNoHalt("[Crossbow] scope render failed: " .. tostring(err) .. "\n")
+		end
+	end
+
+	local function GetHeldCrossbowModel()
+		local wep = LocalPlayer():GetActiveWeapon()
+		if IsValid(wep) and wep:GetClass() == "weapon_hg_crossbow" and IsValid(wep:GetWM()) then
+			return wep:GetWM(), wep
+		end
+	end
+
+	concommand.Add("hg_crossbow_materials", function()
+		local model, wep = GetHeldCrossbowModel()
+		local temporary = false
+		if not IsValid(model) then
+			model = ClientsideModel("models/weapons/c_crossbow.mdl")
+			if not IsValid(model) then print("[Crossbow] couldn't load models/weapons/c_crossbow.mdl") return end
+			temporary = true
+		end
+
+		print("[Crossbow] material slots on " .. model:GetModel() .. ":")
+		for index, name in ipairs(model:GetMaterials()) do
+			print(string.format("[Crossbow]   [%d] %s", index - 1, name))
+		end
+		print("[Crossbow] slot showing the scope: " .. tostring(model.hgScopeLensSlot)
+			.. " | found automatically: " .. tostring(model.hgDetectedLensSlot)
+			.. " | hg_crossbow_lens_slot = " .. cvLensSlot:GetInt())
+
+		if temporary then model:Remove() end
+	end)
+
+	concommand.Add("hg_crossbow_lens_next", function()
+		local model = GetHeldCrossbowModel()
+		local count = IsValid(model) and #model:GetMaterials() or 0
+		if count == 0 then print("[Crossbow] hold the crossbow first") return end
+
+		local nextSlot = (cvLensSlot:GetInt() + 1) % count
+		RunConsoleCommand("hg_crossbow_lens_slot", tostring(nextSlot))
+		print("[Crossbow] scope picture now on slot " .. nextSlot .. " (" .. tostring(model:GetMaterials()[nextSlot + 1]) .. "). Use hg_crossbow_lens_slot -1 to go back to automatic.")
+	end)
+
+	concommand.Add("hg_crossbow_lens_redetect", function()
+		local model = GetHeldCrossbowModel()
+		if IsValid(model) then
+			model.hgLensDetectDone = nil
+			model.hgDetectedLensSlot = nil
+			model.hgLensTries = nil
+			model.hgLensRetryAt = nil
+		end
+		RunConsoleCommand("hg_crossbow_lens_slot", "-1")
+		print("[Crossbow] lens detection reset: aim down the scope to find it again.")
+	end)
 
 	function SWEP:ReloadStart()
 		if not self or not IsValid(self:GetOwner()) then return end
@@ -224,7 +497,7 @@ if CLIENT then
 	end
 
 	function SWEP:ModelCreated(model)
-		model:SetSubMaterial(2,"effects/arc9/rt")
+		self:ApplyScopeLens(model)
 		model:SetSkin(self:Clip1() < 1 and 0 or 1)
 	end
 

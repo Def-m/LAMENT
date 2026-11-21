@@ -797,6 +797,7 @@ if CLIENT then
 		end
 	
 		local tblcpy = refreshtbl()
+		local lastEquipmentSignature
 
 		local frame = vgui.Create( "ZFrame" )
 		hg.armorMenuPanel = frame
@@ -855,28 +856,30 @@ if CLIENT then
 		StyleEquipmentScroll(scroll)
 
 		function frame:RefreshTbl()
-			tblcpy = refreshtbl()
-
-			if IsValid(scroll) then
-				scroll:Remove()
+			local updatedEquipment = refreshtbl()
+			local signatureParts = {}
+			for key, value in pairs(updatedEquipment) do
+				signatureParts[#signatureParts + 1] = tostring(key) .. "=" .. tostring(value)
 			end
-
-			scroll = vgui.Create("DScrollPanel", frame)
-			scroll:Dock(FILL)
-			scroll:DockMargin(10, 44, 10, 8)
-			frame.scroll = scroll
-			StyleEquipmentScroll(scroll)
+			table.sort(signatureParts)
+			local signature = table.concat(signatureParts, "|")
+			if signature == lastEquipmentSignature then return end
+			lastEquipmentSignature = signature
+			tblcpy = updatedEquipment
+			scroll:GetCanvas():Clear()
 			
 			for k, v in pairs(tblcpy) do
 				if !hg.armorNames[v] and isnumber(k) then continue end
 				//if hg.armor[v][k].nodrop then continue end
 				local but = vgui.Create("DButton")
-				local prefix = string.find(k, "_")
+				local equipmentId = isnumber(k) and v or k
+				local displayKey = tostring(k)
+				local prefix = isstring(k) and string.find(k, "_")
 				if prefix then
-					k = string.sub(k, prefix + 1)
+					displayKey = string.sub(k, prefix + 1)
 				end
 
-				but:SetText( hg.armorNames[v] or string.NiceName(k) )
+				but:SetText(hg.armorNames[v] or string.NiceName(displayKey))
 				but:SetFont("ZCity_Tiny")
 				but:Dock( TOP )
 				but:DockMargin( 6, 6, 6, 0 )
@@ -893,7 +896,7 @@ if CLIENT then
 				if hg.armorIcons[v] then img:SetImage( hg.armorIcons[v] ) end
 	
 				but.DoClick = function()
-					dropArmor(isnumber(k) and v or k)
+					dropArmor(equipmentId)
 				end
 	
 				scroll:AddItem(but)
@@ -913,7 +916,8 @@ if CLIENT then
 		local ply = LocalPlayer()
 		local organism = ply.organism or {}
 		local armors = ply.armors
-		if !armors or !armors["face"] or !hg.armor.face[armors["face"]].NVGRender then return end
+		local faceData = armors and armors["face"] and hg.armor and hg.armor.face and hg.armor.face[armors["face"]]
+		if !faceData or !faceData.NVGRender then return end
 		if ply:Alive() and not organism.otrub then
 			local tbl = {function(mouseClick)
 				RunConsoleCommand("hg_enable_nvg")
@@ -928,6 +932,7 @@ if CLIENT then
 		local armor = ply.armors and ply.armors.visor
 		local armorData = armor and hg.armor.visor and hg.armor.visor[armor]
 		if not armorData or not armorData.toggleableVisor or not ply:Alive() or organism.otrub then return end
+		if not isfunction(hg.IsVisorLowered) then return end
 
 		local lowered = hg.IsVisorLowered(ply, armor, armorData)
 		hg.radialOptions[#hg.radialOptions + 1] = {
@@ -944,7 +949,8 @@ if SERVER then
 	concommand.Add("hg_enable_nvg", function( ply, cmd, args )
 		if ply.NVG_CD and ply.NVG_CD > CurTime() then return end
 		local armors = ply.armors
-		if !armors or !armors["face"] or !hg.armor.face[armors["face"]].NVGRender then return end
+		local faceData = armors and armors["face"] and hg.armor and hg.armor.face and hg.armor.face[armors["face"]]
+		if !faceData or !faceData.NVGRender then return end
 
 		ply.NVG_CD = CurTime() + 1
 		hg.RunZManipAnim( ply, "visordown", ply:GetNWBool("NVG_Enabled", false), ply:GetNWBool("NVG_Enabled", false) and 1 or 1.5 )

@@ -136,7 +136,14 @@ end)
 
 MODE.TypeNames = {
 	["standard"] = "Homicide",
-	["suicidelunatic"] = "Suicide Lunatic",
+	["soe"] = "State of Emergency",
+	["improvision"] = "Improvision",
+}
+
+MODE.TypeVariantNames = {
+	["standard"] = "Standard",
+	["soe"] = "State of Emergency (SOE)",
+	["improvision"] = "Improvision",
 }
 
 --local hg_coolvetica = ConVarExists("hg_coolvetica") and GetConVar("hg_coolvetica") or CreateClientConVar("hg_coolvetica", "0", true, false, "changes every text to coolvetica because its good", 0, 1)
@@ -243,6 +250,42 @@ MODE.TypeObjectives.suicidelunatic = {
 		objective = "Someone is seriously armed with explosives, now you need to survive.",
 		name = "an Innocent",
 		color1 = Color(0,120,190)
+	},
+}
+
+MODE.TypeObjectives.soe = {
+	traitor = {
+		objective = "Eliminate everyone before the Vigilante stops you.",
+		name = "an Executioner",
+		color1 = Color(190, 0, 0)
+	},
+	gunner = {
+		objective = "You are the Vigilante. Stop the Executioner.",
+		name = "a Vigilante",
+		color1 = Color(158, 0, 190)
+	},
+	innocent = {
+		objective = "Survive the State of Emergency.",
+		name = "an Innocent",
+		color1 = Color(0, 120, 190)
+	},
+}
+
+MODE.TypeObjectives.improvision = {
+	traitor = {
+		objective = "Use your limited weapon options to eliminate everyone before the Vigilante stops you.",
+		name = "an Executioner",
+		color1 = Color(190, 0, 0)
+	},
+	gunner = {
+		objective = "You are the Vigilante. Stop the Executioner with your taser and handcuffs.",
+		name = "a Vigilante",
+		color1 = Color(158, 0, 190)
+	},
+	innocent = {
+		objective = "Survive the Improvision.",
+		name = "an Innocent",
+		color1 = Color(0, 120, 190)
 	},
 }
 
@@ -515,7 +558,12 @@ if lply:Team() == TEAM_SPECTATOR then return end
 		}
 	end
 
-	add(MODE.TypeNames[MODE.Type] or "Homicide", "ZB_HomicideHeader", Color(255, 255, 255), sw * 0.5, sh * 0.1, "left", 0, 0.9)
+	local roundName = MODE.TypeVariantNames[MODE.Type] and "Homicide" or (MODE.TypeNames[MODE.Type] or "Homicide")
+	add(roundName, "ZB_HomicideHeader", Color(255, 255, 255), sw * 0.5, sh * 0.1, "left", 0, 0.9)
+	local variantName = MODE.TypeVariantNames[MODE.Type]
+	if variantName then
+		add("Variant: " .. variantName, "ZB_HomicideMedium", Color(220, 220, 220), sw * 0.5, sh * 0.17, "top", 0.25, 0.9)
+	end
 	add("You are " .. Rolename, "ZB_HomicideMediumLarge", ColorRole, sw * 0.5, sh * 0.5, "right", 0.7, 1.1)
 
 	local cur_y = sh * 0.5

@@ -80,8 +80,9 @@ local math_abs, math_Approach, math_AngleDifference, math_Clamp, math_cos, math_
 		"raminto/ram3.wav"
 	}
 
+	-- "Hold shift to sprint" in the settings menu (hg_hold_shift_sprint); hg_nojogging is the old name
 	local function hg_NoJogging(ply)
-		return IsValid(ply) and ply:GetInfoNum("hg_nojogging", 0) >= 1
+		return IsValid(ply) and (ply:GetInfoNum("hg_hold_shift_sprint", 0) >= 1 or ply:GetInfoNum("hg_nojogging", 0) >= 1)
 	end
 
 	local function hg_GetSprintCollisionPhysBone(ply, hitPos)

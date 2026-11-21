@@ -2,6 +2,54 @@
 local matPistolAmmo = Material("vgui/hud/bullets/low_caliber.png")
 local matRfileAmmo = Material("vgui/hud/bullets/high_caliber.png")
 local matShotgunAmmo = Material("vgui/hud/bullets/buck_caliber.png")
+
+local function drawProjectileModel(self, reverse)
+	if not CLIENT or not self.FunctionInfo or not self.FunctionInfo.Model or not isvector(self.Pos) or not isvector(self.Vel) then return end
+	if not IsValid(self.Draw_Model) then
+		self.Draw_Model = ClientsideModel(self.FunctionInfo.Model)
+	end
+	if not IsValid(self.Draw_Model) then return end
+
+	self.Draw_Model:SetPos(self.Pos)
+	self.Draw_Model:SetAngles((reverse and -self.Vel or self.Vel):Angle())
+end
+
+local function removeProjectileModel(self)
+	if CLIENT and IsValid(self.Draw_Model) then
+		self.Draw_Model:Remove()
+	end
+end
+
+local function spawnProjectileFromBullet(self, trace, normal, hitOffset)
+	if not SERVER or (trace and trace.HitSky) then return end
+	if not self.FunctionInfo or not isstring(self.FunctionInfo.Ent) then return end
+
+	local projectile = ents.Create(self.FunctionInfo.Ent)
+	if not IsValid(projectile) then return end
+	projectile:SetPos(self.Pos)
+	projectile:SetAngles(normal:Angle())
+	projectile:Spawn()
+	self.SpawnedEntity = projectile
+
+	if trace then
+		projectile:Hit(trace.Entity, trace.HitPos + hitOffset, trace.PhysicsBone, normal)
+	end
+end
+
+local function onstopped_silk(self, _, _, trace)
+	local normal = self.Vel:GetNormalized()
+	spawnProjectileFromBullet(self, trace, normal, -normal * 10)
+end
+
+local function arrow_hit(self, _, _, trace)
+	local normal = -self.Vel:GetNormalized()
+	spawnProjectileFromBullet(self, trace, normal, -normal * 4)
+end
+
+local function drawArrowModel(self)
+	drawProjectileModel(self, true)
+end
+
 hg.ammotypes = {
 	["5.56x45mm"] = {
 		name = "5.56x45 mm",
@@ -1966,10 +2014,9 @@ hg.ammotypes = {
 			Ent = "crossbow_projectile",
 		},
 		BulletFunctions = {
-			-- Draw = draw_silk,
+			Draw = drawProjectileModel,
+			PreRemove = removeProjectileModel,
 			OnStopped = onstopped_silk,
-			--PreRemove = preremove_silk,
-			--PostRemove = postremove_silk,
 		},
 	},
 	["arrow"] = {
@@ -2004,10 +2051,9 @@ hg.ammotypes = {
 			Ent = "arrow_projectile",
 		},
 		BulletFunctions = {
-			-- Draw = draw_silk,
+			Draw = drawArrowModel,
+			PreRemove = removeProjectileModel,
 			OnStopped = arrow_hit,
-			--PreRemove = preremove_silk,
-			--PostRemove = postremove_silk,
 		},
 	},
 	["grenade_30x29mm"] = {
@@ -2037,9 +2083,9 @@ hg.ammotypes = {
 			-- Ent = "crossbow_projectile",
 		},
 		BulletFunctions = {
-			Draw = draw_explosive,
+			Draw = drawProjectileModel,
+			PreRemove = removeProjectileModel,
 			OnStopped = onstopped_explosive,
-			PreRemove = preremove_explosive,
 		},
 	},
 	["grenade_40x381"] = {

@@ -269,7 +269,9 @@ local radialIconMaterials = {
 }
 
 local function NormalizeRadialText(txt)
-	txt = string.lower((txt or ""):gsub("\n", " "))
+	if txt == nil then txt = "" end
+	if not isstring(txt) then txt = tostring(txt) end
+	txt = string.lower((txt:gsub("\n", " ")))
 	txt = txt:gsub("[^%w%s]", "")
 	txt = txt:gsub("%s+", " ")
 	return string.Trim(txt)
@@ -318,6 +320,8 @@ local function DrawCircleRing(x, y, innerRadius, outerRadius, segments, color)
 end
 
 local function GetRadialIcon(option)
+	if not istable(option) then return nil end
+
 	if isfunction(option[5]) then
 		local mat = option[5](option)
 		if mat and type(mat) == "IMaterial" then
@@ -329,7 +333,10 @@ local function GetRadialIcon(option)
 		return option[5]
 	end
 
-	local txt = NormalizeRadialText(option[2])
+	-- labels can be functions (e.g. revolver drum slots), resolve them before normalizing
+	local label = option[2]
+	if isfunction(label) then label = label(option) end
+	local txt = NormalizeRadialText(label)
 	if txt == "" then return nil end
 
 	if radialIconMaterials[txt] then
@@ -367,7 +374,8 @@ local function GetRadialIconAngle(option)
 end
 
 local function GetRadialFallbackText(txt)
-	txt = string.Trim((txt or ""):gsub("\n", " "))
+	if not isstring(txt) then txt = txt ~= nil and tostring(txt) or "" end
+	txt = string.Trim((txt:gsub("\n", " ")))
 	if txt == "" then return "?" end
 
 	local out = {}
@@ -404,7 +412,8 @@ local function GetModernRadialHudScale()
 end
 
 local function DrawModernRadialCenterText(text, x, y, maxWidth, color)
-	text = string.Trim((text or ""):gsub("\n", " "))
+	if not isstring(text) then text = text ~= nil and tostring(text) or "" end
+	text = string.Trim((text:gsub("\n", " ")))
 	if text == "" then return end
 
 	surface.SetFont("HomigradFontRadialCenter")
@@ -422,16 +431,39 @@ local function DrawModernRadialCenterText(text, x, y, maxWidth, color)
 	cam.PopModelMatrix()
 end
 
+-- Runs every radialOptions provider in isolation so one broken provider
+-- can't take the whole Q menu down (each error is only reported once).
+local radialReportedErrors = {}
+local function CollectRadialOptions()
+	local functions = hook.GetTable()["radialOptions"]
+	if not functions then return end
+
+	for name, func in SortedPairs(functions) do
+		if not isfunction(func) then continue end
+		local ok, err = pcall(func)
+		if not ok then
+			local key = tostring(name) .. tostring(err)
+			if not radialReportedErrors[key] then
+				radialReportedErrors[key] = true
+				ErrorNoHalt("[Q menu] radialOptions hook '" .. tostring(name) .. "' errored: " .. tostring(err) .. "\n")
+			end
+		end
+	end
+
+	-- drop malformed entries so Paint never trips over them
+	for i = #hg.radialOptions, 1, -1 do
+		if not istable(hg.radialOptions[i]) then table.remove(hg.radialOptions, i) end
+	end
+end
+
 local function CreateRadialMenu(options_arg, bAutoClose)
 	local sizeX, sizeY = ScrW(), ScrH()
 	hg.radialOptions = {}
-	local paining = lply.organism and lply.organism.pain and (lply.organism.pain > 100 or lply.organism.brain > 0.2) or false
-	
+	local org = lply.organism
+	local paining = org and ((tonumber(org.pain) or 0) > 100 or (tonumber(org.brain) or 0) > 0.2) or false
+
 	if !options_arg then
-		local functions = hook.GetTable()["radialOptions"]
-		for i, func in SortedPairs(functions) do
-			func()
-		end
+		CollectRadialOptions()
 	end
 
 	//hook_Run("radialOptions")
@@ -475,12 +507,7 @@ local function CreateRadialMenu(options_arg, bAutoClose)
 			if thinkwait > CurTime() then return end
 			thinkwait = CurTime() + 0.25
 			table.Empty(hg.radialOptions)
-			local functions = hook.GetTable()["radialOptions"]
-			
-			for i, func in SortedPairs(functions) do
-				//if i == "zmeyka_test" then continue end
-				func()
-			end
+			CollectRadialOptions()
 		end
 	end
 	
@@ -529,7 +556,7 @@ local function CreateRadialMenu(options_arg, bAutoClose)
 				optionSelected[oldNum] = optionSelected[oldNum] or 0
 				optionSelected[oldNum] = LerpFT(0.1, optionSelected[oldNum], isMouseIntersecting and 1 or 0)
 
-				if option[3] then
+				if option[3] and istable(option[4]) and #option[4] > 0 then
 					surface.SetMaterial(matHuy)
 					surface.SetDrawColor(useOldRadial and oldRadialSliceColor or colBlack)
 					draw.CirclePart(centerX, centerY, r, 40, optionCount, oldNum)
@@ -582,8 +609,8 @@ local function CreateRadialMenu(options_arg, bAutoClose)
 							math.randomseed(os.time())
 						end
 						DrawOldRadialLabel(centerX, centerY, a, r, txt, icon, viewLerp)
-					elseif option[5] then
-						surface.SetMaterial(option[5])
+					elseif GetRadialIcon(option) then
+						surface.SetMaterial(GetRadialIcon(option))
 						surface.SetDrawColor(color_white)
 						local sizeW = scrW / 2.25 + math.sin(a) * r * 0.7
 						local sizeH = scrH / 2.2 + math.cos(a) * r * 0.7
