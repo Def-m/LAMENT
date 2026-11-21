@@ -1,4 +1,6 @@
 local function IncluderFunc(fileName)
+	if (string.GetExtensionFromFilename(fileName) ~= "lua") then return end
+
 	local ok, err = pcall(function()
 		if (fileName:find("sv_")) then
 			include(fileName)
