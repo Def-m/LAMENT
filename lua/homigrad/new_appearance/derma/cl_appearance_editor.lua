@@ -420,6 +420,18 @@ function PANEL:First(ply)
 end
 
 function PANEL:Paint(w,h)
+    -- inside the ESC menu the backdrop is drawn by the menu's background layer,
+    -- underneath the playermodel layer, so skip it here or it would cover the model
+    local menuParent = self:GetParent()
+    local luaMenu = IsValid(menuParent) and menuParent:GetParent()
+    if IsValid(luaMenu) and IsValid(luaMenu.BackgroundLayer) then
+        surface.SetDrawColor(100,100,100,40)
+        surface.DrawRect(0,0,w,1)
+        surface.DrawRect(0,h-1,w,1)
+        surface.DrawRect(0,0,1,h)
+        surface.DrawRect(w-1,0,1,h)
+        return
+    end
     if hg.DrawBlur then hg.DrawBlur(self, 5) end
     draw.RoundedBox(0,0,0,w,h,CLR.darkBg)
     local t = RealTime()
@@ -489,6 +501,10 @@ function PANEL:SyncSharedPreview()
         local ty = self.AppearancePreviewY or luaMenu.previewHolder:GetY()
         luaMenu.previewHolder.TargetX = tx
         luaMenu.previewHolder.TargetY = ty
+        if self.AppearancePreviewW and self.AppearancePreviewH then
+            luaMenu.previewHolder:SetSize(self.AppearancePreviewW, self.AppearancePreviewH)
+        end
+        luaMenu.previewModel.ClipToBounds = true
         luaMenu.previewHolder.AppearanceFollow = true
         luaMenu.previewHolder:SetVisible(true)
         luaMenu.previewHolder:SetAlpha(255)
@@ -506,6 +522,7 @@ function PANEL:RestoreSharedPreview()
     self.SharedPreview.CamPosOverride = nil
     self.SharedPreview.FOVOverride = nil
     self.SharedPreview.LookAngOverride = nil
+    self.SharedPreview.ClipToBounds = nil
     if IsValid(self.SharedPreviewHolder) and self.SharedPreviewHolderOriginal then
         self.SharedPreviewHolder.AppearanceFollow = false
         self.SharedPreviewHolder.TargetX = self.SharedPreviewHolderOriginal.x
@@ -579,8 +596,6 @@ function UI.TextButton(parent, title, fnClick, fnActive, freeLayout)
         end
         local tc = self.IsActive and CLR.white or (hov and CLR.text or Color(188,188,188))
         draw.SimpleText(self.Title, "ZCity_Menu_Settings_Tiny", MU(10), h*0.5, tc, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        local dot = self.IsActive and CLR.accent or (hov and Color(175,175,175) or Color(85,85,85))
-        draw.RoundedBox(2, w-MU(12), h*0.5-MU(2), MU(4), MU(4), dot)
     end
     return btn
 end
@@ -1851,6 +1866,32 @@ function PANEL:PostInit()
         surface.DrawLine(w*0.5-MU(60),h-MU(38),w*0.5+MU(60),h-MU(38))
         draw.SimpleText("01 / CHARACTER PREVIEW", "ZCity_Menu_Settings_Tiny", w-MU(12), MU(10), Color(105,105,105), TEXT_ALIGN_RIGHT, TEXT_ALIGN_TOP)
         draw.SimpleText("Choose a category on the left", "ZCity_Menu_Settings_Tiny", w-MU(12), h-MU(10), Color(95,95,95), TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    end
+
+    -- fit the shared playermodel inside the preview box (screen space; mainPanel ends at x = sidebarW)
+    do
+        local stageX = sidebarW + previewStage:GetX()
+        local stageY = previewStage:GetY()
+        local stageW, stageH = previewStage:GetWide(), previewStage:GetTall()
+        local innerTop = stageY + MU(40)
+        local innerBottom = stageY + stageH - MU(28)
+        local innerH = math.max(innerBottom - innerTop, MU(100))
+        local orig = self.SharedPreviewHolderOriginal
+        local aspect = (orig and orig.h > 0) and (orig.w / orig.h) or (340 / 920)
+        local fitH = innerH
+        local fitW = math.floor(fitH * aspect)
+        if fitW > stageW - MU(20) then
+            fitW = stageW - MU(20)
+            fitH = math.floor(fitW / aspect)
+        end
+        self.AppearancePreviewW = fitW
+        self.AppearancePreviewH = fitH
+        self.AppearancePreviewX = math.floor(stageX + (stageW - fitW) * 0.5)
+        self.AppearancePreviewY = math.floor(innerTop + (innerH - fitH) * 0.5)
+        -- keep the model inside the box when the selector panel opens
+        local room = self.AppearancePreviewX - stageX - MU(10)
+        self.PreviewSelectorShiftX = math.Clamp(math.min(MU(CFG.previewSelectorShiftX), room), 0, MU(CFG.previewSelectorShiftX))
+        self:SyncSharedPreview()
     end
 
     selectorPanel = vgui.Create("DPanel", mainPanel)

@@ -36,18 +36,24 @@ local function CreateTraitorMenuFonts()
     })
 
 	surface.CreateFont(ARENA_META_FONT, {
-		font = "Verily Serif Mono",
+		font = "IBM Plex Mono",
 		size = ScreenScale(7),
 		weight = 400,
 		antialias = true
 	})
 
 	surface.CreateFont(ARENA_DESC_FONT, {
-		font = "Verily Serif Mono",
+		font = "IBM Plex Mono",
 		size = ScreenScale(5),
 		weight = 400,
 		antialias = true
 	})
+
+	local scale = math.min(ScrW(), ScrH()) / 1000
+	surface.CreateFont("ZCity_Loadout_Title", { font = "IBM Plex Mono", size = math.max(16, math.floor(32 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_Loadout_CardTitle", { font = "IBM Plex Mono", size = math.max(20, math.floor(46 * scale)), weight = 500, antialias = true })
+	surface.CreateFont("ZCity_Loadout_Small", { font = "IBM Plex Mono", size = math.max(13, math.floor(19 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_Loadout_Tiny", { font = "IBM Plex Mono", size = math.max(12, math.floor(16 * scale)), weight = 400, antialias = true })
 end
 
 hook.Add("OnScreenSizeChanged", "ZCity_TraitorLoadout_Fonts", CreateTraitorMenuFonts)
@@ -55,7 +61,7 @@ CreateTraitorMenuFonts()
 
 local LOADOUT_STYLE = {
     background = Color(8, 8, 8, 255),
-    topBar = Color(22, 20, 17, 220),
+    topBar = Color(24, 24, 24, 210),
     panel = Color(28, 28, 28, 180),
     panelActive = Color(48, 48, 48, 220),
     panelHover = Color(60, 60, 60, 235),
@@ -64,9 +70,9 @@ local LOADOUT_STYLE = {
     accent = Color(225, 225, 225, 255),
     text = Color(220, 220, 220, 255),
     dim = Color(140, 140, 140, 255),
-    scrollbar = Color(18, 16, 14, 220),
-    scrollbarGrip = Color(90, 82, 70, 240),
-    scrollbarGripHover = Color(130, 120, 105, 240)
+    scrollbar = Color(25, 25, 25, 200),
+    scrollbarGrip = Color(80, 80, 80, 255),
+    scrollbarGripHover = Color(120, 120, 120, 255)
 }
 
 local color_whitey = Color(240, 240, 240, 255)
@@ -77,6 +83,108 @@ local clr_1 = Color(100, 100, 100, 40)
 local tex_gradient_r = Material("vgui/gradient-r")
 local tex_gradient_l = Material("vgui/gradient-l")
 local tex_gradient_d = Material("vgui/gradient-d")
+
+-- same backdrop as the main menu / appearance editor
+local function LoadoutBackdrop(self, w, h)
+	if hg.PaintMenuBackground then
+		hg.PaintMenuBackground(w, h, 1)
+		return
+	end
+	draw.RoundedBox(0, 0, 0, w, h, clr_verygray)
+	surface.SetDrawColor(menu_gradient_right)
+	surface.SetMaterial(tex_gradient_r)
+	surface.DrawTexturedRect(0, 0, w, h)
+	surface.SetDrawColor(clr_1)
+	surface.SetMaterial(tex_gradient_d)
+	surface.DrawTexturedRect(0, 0, w, h)
+end
+
+-- header strip like the round stats / settings pages
+local function LoadoutHeader(parent, title, hint)
+	local header = vgui.Create("DPanel", parent)
+	header:SetPos(0, 0)
+	header:SetSize(ScrW(), MenuUnit(64))
+	header.OpenTime = CurTime()
+	header.Paint = function(self, w, h)
+		surface.SetDrawColor(LOADOUT_STYLE.panel)
+		surface.DrawRect(0, 0, w, h)
+		surface.SetDrawColor(LOADOUT_STYLE.border.r, LOADOUT_STYLE.border.g, LOADOUT_STYLE.border.b, 50)
+		surface.DrawRect(0, h - 1, w, 1)
+		local chars = math.min(#title, math.floor((CurTime() - self.OpenTime) * 18))
+		draw.SimpleText(title:sub(1, chars) .. string.rep("#", #title - chars), "ZCity_Loadout_Title", MenuUnit(25), h / 2, color_whitey, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		if hint then
+			draw.SimpleText(hint, "ZCity_Loadout_Tiny", w - MenuUnit(25), h / 2, LOADOUT_STYLE.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+		end
+	end
+	return header
+end
+
+-- appearance-editor style button
+local function LoadoutButton(parent, label, onClick)
+	local btn = vgui.Create("DButton", parent)
+	btn:SetText("")
+	btn.HoverLerp = 0
+	btn.Think = function(self)
+		self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, self:IsHovered() and 1 or 0)
+	end
+	btn.Paint = function(self, w, h)
+		local hov = self:IsHovered()
+		local hl = self.HoverLerp or 0
+		draw.RoundedBox(3, 0, 0, w, h, hov and Color(48, 48, 48, 235) or Color(31, 31, 31, 205))
+		surface.SetDrawColor(LOADOUT_STYLE.border.r, LOADOUT_STYLE.border.g, LOADOUT_STYLE.border.b, 45 + 100 * hl)
+		surface.DrawOutlinedRect(0, 0, w, h, 1)
+		if hl > 0.01 then
+			surface.SetDrawColor(LOADOUT_STYLE.accent.r, LOADOUT_STYLE.accent.g, LOADOUT_STYLE.accent.b, 210 * hl)
+			surface.DrawRect(0, 0, MenuUnit(3), h)
+		end
+		draw.SimpleText(label, "ZCity_Loadout_Tiny", w / 2, h / 2, hov and LOADOUT_STYLE.text or Color(188, 188, 188), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	end
+	btn.DoClick = function()
+		surface.PlaySound("ui/rem_click.wav")
+		onClick()
+	end
+	return btn
+end
+
+-- footer strip with a return button
+local function LoadoutFooter(parent, label, onClick)
+	local footer = vgui.Create("DPanel", parent)
+	local fh = MenuUnit(56)
+	footer:SetPos(0, ScrH() - fh)
+	footer:SetSize(ScrW(), fh)
+	footer.Paint = function(self, w, h)
+		surface.SetDrawColor(LOADOUT_STYLE.panel)
+		surface.DrawRect(0, 0, w, h)
+		surface.SetDrawColor(LOADOUT_STYLE.border.r, LOADOUT_STYLE.border.g, LOADOUT_STYLE.border.b, 50)
+		surface.DrawRect(0, 0, w, 1)
+	end
+	local btn = LoadoutButton(footer, label, onClick)
+	local pad = MenuUnit(10)
+	btn:SetPos(pad, pad)
+	btn:SetSize(MenuUnit(200), fh - pad * 2)
+	return footer
+end
+
+-- card used on the mode / role pickers
+local function PaintLoadoutCard(self, w, h, title, points, desc, accent)
+	local hl = self.HoveredLerp or 0
+	local hov = self:IsHovered()
+	surface.SetDrawColor(hov and LOADOUT_STYLE.panelActive or LOADOUT_STYLE.panel)
+	surface.DrawRect(0, 0, w, h)
+	surface.SetDrawColor(LOADOUT_STYLE.border.r, LOADOUT_STYLE.border.g, LOADOUT_STYLE.border.b, 50 + 95 * hl)
+	surface.DrawOutlinedRect(0, 0, w, h, 1)
+	local ac = accent or LOADOUT_STYLE.accent
+	surface.SetDrawColor(ac.r, ac.g, ac.b, accent and (140 + 100 * hl) or (210 * hl))
+	surface.DrawRect(0, 0, MenuUnit(3), h)
+
+	draw.SimpleText(title, "ZCity_Loadout_CardTitle", w * 0.5, h * 0.42, color_whitey, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	surface.SetFont("ZCity_Loadout_CardTitle")
+	local tw = surface.GetTextSize(title)
+	surface.SetDrawColor(255, 255, 255, 24)
+	surface.DrawLine(w * 0.5 - tw * 0.5, h * 0.5, w * 0.5 + tw * 0.5, h * 0.5)
+	draw.SimpleText(string.upper(points), "ZCity_Loadout_Small", w * 0.5, h * 0.56, LOADOUT_STYLE.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	draw.SimpleText(desc, "ZCity_Loadout_Tiny", w * 0.5, h * 0.63, LOADOUT_STYLE.dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+end
 
 local SOUND_TYPEWRITER = "shitty/tap-resonant.wav"
 local SOUND_TYPEWRITER_LEVEL = 55
@@ -899,19 +1007,7 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
 
     editorPanel:SetAlpha(0)
     editorPanel.Paint = function(self, w, h)
-        if hg.DrawBlur then
-            hg.DrawBlur(self, 5)
-        end
-        draw.RoundedBox(0, 0, 0, w, h, clr_verygray)
-        surface.SetDrawColor(menu_gradient_right)
-        surface.SetMaterial(tex_gradient_r)
-        surface.DrawTexturedRect(0, 0, w, h)
-        surface.SetDrawColor(clr_verygray)
-        surface.SetMaterial(tex_gradient_l)
-        surface.DrawTexturedRect(0, 0, w, h)
-        surface.SetDrawColor(clr_1)
-        surface.SetMaterial(tex_gradient_d)
-        surface.DrawTexturedRect(0, 0, w, h)
+		LoadoutBackdrop(self, w, h)
     end
     editorPanel:AlphaTo(255, 0.15, 0)
 
@@ -936,20 +1032,27 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
     end
 
     local function StyleTopButton(btn, selected, accent)
-        btn:SetTextColor(color_whitey)
-        btn:SetFont(TRAITOR_MENU_FONT)
+        btn.Label = string.upper(btn:GetText() or "")
+        btn:SetText("")
+        btn.HoverLerp = 0
+        btn.Think = function(self)
+            self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, self:IsHovered() and 1 or 0)
+        end
         btn.Paint = function(self, w, h)
             local isSelected = selected
             if isfunction(selected) then isSelected = selected() end
-            local bg = isSelected and LOADOUT_STYLE.panelActive or Color(27, 27, 27, 230)
-            if self:IsHovered() then bg = LOADOUT_STYLE.panelHover end
+            local hov = self:IsHovered()
+            local bg = isSelected and Color(58, 58, 58, 235) or Color(31, 31, 31, 205)
+            if hov then bg = Color(48, 48, 48, 235) end
             draw.RoundedBox(3, 0, 0, w, h, bg)
-            surface.SetDrawColor(accent or LOADOUT_STYLE.border)
+            surface.SetDrawColor(LOADOUT_STYLE.border.r, LOADOUT_STYLE.border.g, LOADOUT_STYLE.border.b, isSelected and 145 or (45 + 80 * (self.HoverLerp or 0)))
             surface.DrawOutlinedRect(0, 0, w, h, 1)
-            if isSelected then
-                surface.SetDrawColor(LOADOUT_STYLE.accent.r, LOADOUT_STYLE.accent.g, LOADOUT_STYLE.accent.b, 180)
-                surface.DrawRect(0, 0, MenuUnit(2), h)
+            if isSelected or (self.HoverLerp or 0) > 0.01 then
+                surface.SetDrawColor(LOADOUT_STYLE.accent.r, LOADOUT_STYLE.accent.g, LOADOUT_STYLE.accent.b, isSelected and 210 or 210 * self.HoverLerp)
+                surface.DrawRect(0, 0, MenuUnit(3), h)
             end
+            local tc = isSelected and color_whitey or (hov and LOADOUT_STYLE.text or Color(188, 188, 188))
+            draw.SimpleText(self.Label, "ZCity_Loadout_Tiny", w / 2, h / 2, tc, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
     end
 
@@ -1039,9 +1142,9 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
     sidebar:SetPos(sw - sidebarWidth, headerHeight)
     sidebar:SetSize(sidebarWidth, sidebarHeight)
     sidebar.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(14, 13, 11, 250))
-        surface.SetDrawColor(LOADOUT_STYLE.accent.r, LOADOUT_STYLE.accent.g, LOADOUT_STYLE.accent.b, 100)
-        surface.DrawRect(0, 0, MenuUnit(1), h)
+        draw.RoundedBox(0, 0, 0, w, h, Color(20, 20, 20, 230))
+        surface.SetDrawColor(LOADOUT_STYLE.accent.r, LOADOUT_STYLE.accent.g, LOADOUT_STYLE.accent.b, 50)
+        surface.DrawRect(0, 0, 1, h)
     end
 
     local sidebarContent = vgui.Create("DPanel", sidebar)
@@ -1236,7 +1339,7 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
             btn:SetFont(TRAITOR_MENU_FONT)
             btn:SetTextColor(LOADOUT_STYLE.text)
             btn.Paint = function(s, w, h)
-                local bgColor = s:IsHovered() and LOADOUT_STYLE.panelHover or Color(22, 20, 17, 220)
+                local bgColor = s:IsHovered() and LOADOUT_STYLE.panelHover or Color(31, 31, 31, 205)
                 draw.RoundedBox(3, 0, 0, w, h, bgColor)
                 surface.SetDrawColor(LOADOUT_STYLE.borderDim)
                 surface.DrawOutlinedRect(0, 0, w, h, 1)
@@ -1267,7 +1370,7 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
         btnCreate:SetFont(TRAITOR_MENU_FONT)
         btnCreate:SetTextColor(LOADOUT_STYLE.text)
         btnCreate.Paint = function(s, w, h)
-            local bgColor = s:IsHovered() and LOADOUT_STYLE.panelHover or Color(22, 20, 17, 220)
+            local bgColor = s:IsHovered() and LOADOUT_STYLE.panelHover or Color(31, 31, 31, 205)
             draw.RoundedBox(3, 0, 0, w, h, bgColor)
             surface.SetDrawColor(LOADOUT_STYLE.borderDim)
             surface.DrawOutlinedRect(0, 0, w, h, 1)
@@ -1462,7 +1565,7 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
     editorAttachmentHeader:SetTall(MenuUnit(26))
     editorAttachmentHeader:DockMargin(MenuUnit(6), 0, MenuUnit(6), MenuUnit(3))
     editorAttachmentHeader.Paint = function(self, w, h)
-        draw.RoundedBox(3, 0, 0, w, h, Color(22, 20, 17, 220))
+        draw.RoundedBox(3, 0, 0, w, h, Color(31, 31, 31, 205))
         draw.SimpleText("ATTACHMENTS", "ZCity_Menu_Settings_Small", w / 2, h / 2, LOADOUT_STYLE.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 
@@ -1638,7 +1741,9 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
             section:SetTall(MenuUnit(210))
             section:DockMargin(MenuUnit(4), MenuUnit(8), MenuUnit(8), 0)
             section.Paint = function(self, w, h)
-                surface.SetDrawColor(LOADOUT_STYLE.borderDim)
+                surface.SetDrawColor(20, 20, 20, 120)
+                surface.DrawRect(0, 0, w, h)
+                surface.SetDrawColor(LOADOUT_STYLE.border.r, LOADOUT_STYLE.border.g, LOADOUT_STYLE.border.b, 30)
                 surface.DrawOutlinedRect(0, 0, w, h, 1)
             end
 
@@ -1647,11 +1752,14 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
             header:SetTall(MenuUnit(30))
             header:DockMargin(0, 0, 0, MenuUnit(5))
             header.Paint = function(self, w, h)
-                draw.RoundedBox(3, 0, 0, w, h, Color(22, 20, 17, 220))
-                surface.SetDrawColor(LOADOUT_STYLE.borderDim)
-                surface.DrawOutlinedRect(0, 0, w, h, 1)
-                draw.SimpleText(title, TRAITOR_MENU_FONT, MenuUnit(8), h / 2, LOADOUT_STYLE.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                draw.SimpleText(categoryPoints .. " POINTS", TRAITOR_MENU_FONT, w - MenuUnit(8), h / 2, LOADOUT_STYLE.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                local pts = categoryPoints .. " POINTS"
+                surface.SetFont("ZCity_Loadout_Tiny")
+                local tw = surface.GetTextSize(title)
+                local pw = surface.GetTextSize(pts)
+                draw.SimpleText(title, "ZCity_Loadout_Tiny", MenuUnit(8), h / 2, Color(132, 132, 132), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(pts, "ZCity_Loadout_Tiny", w - MenuUnit(8), h / 2, LOADOUT_STYLE.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                surface.SetDrawColor(255, 255, 255, 24)
+                surface.DrawLine(MenuUnit(8) + tw + MenuUnit(8), math.floor(h / 2), w - MenuUnit(8) - pw - MenuUnit(8), math.floor(h / 2))
             end
 
             local scroller = vgui.Create("DHorizontalScroller", section)
@@ -1679,6 +1787,9 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
                 if selected then
                     surface.SetDrawColor(LOADOUT_STYLE.accent)
                     surface.DrawRect(0, 0, MenuUnit(3), h)
+                elseif self:IsHovered() and not disabled then
+                    surface.SetDrawColor(LOADOUT_STYLE.accent.r, LOADOUT_STYLE.accent.g, LOADOUT_STYLE.accent.b, 120)
+                    surface.DrawRect(0, 0, MenuUnit(3), h)
                 end
 
                 if not isSkill then
@@ -1694,10 +1805,10 @@ local function OpenRoleEditor(parentPanel, roleId, returnPanel, selectedVariant)
                     draw.SimpleText("ABILITY", TRAITOR_MENU_FONT, w / 2, h / 2 - MenuUnit(10), LOADOUT_STYLE.dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
                 end
 
-                draw.SimpleText(info.cost .. " PTS", TRAITOR_MENU_FONT, MenuUnit(8), MenuUnit(6), LOADOUT_STYLE.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
-                draw.SimpleText(info.name, TRAITOR_MENU_FONT, w / 2, h - MenuUnit(27), disabled and LOADOUT_STYLE.dim or color_whitey, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                draw.SimpleText(info.cost .. " PTS", "ZCity_Loadout_Tiny", MenuUnit(10), MenuUnit(7), LOADOUT_STYLE.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+                draw.SimpleText(string.upper(info.name or ""), "ZCity_Loadout_Small", w / 2, h - MenuUnit(22), disabled and LOADOUT_STYLE.dim or color_whitey, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
                 if selected then
-                    draw.SimpleText("EQUIPPED", TRAITOR_MENU_FONT, w - MenuUnit(8), MenuUnit(6), LOADOUT_STYLE.accent, TEXT_ALIGN_RIGHT, TEXT_ALIGN_TOP)
+                    draw.SimpleText("EQUIPPED", "ZCity_Loadout_Tiny", w - MenuUnit(10), MenuUnit(7), LOADOUT_STYLE.accent, TEXT_ALIGN_RIGHT, TEXT_ALIGN_TOP)
                 end
                 if disabled then
                     draw.RoundedBox(3, 0, 0, w, h, Color(0, 0, 0, 105))
@@ -1848,66 +1959,13 @@ local function OpenHomicideMenu(rootPanel)
     rootPanel:SetVisible(false)
     parentPanel:SetAlpha(0)
     parentPanel.Paint = function(self, w, h)
-        if hg.DrawBlur then
-            hg.DrawBlur(self, 5)
-        end
-        draw.RoundedBox(0, 0, 0, w, h, clr_verygray)
-        surface.SetDrawColor(menu_gradient_right)
-        surface.SetMaterial(tex_gradient_r)
-        surface.DrawTexturedRect(0, 0, w, h)
-        surface.SetDrawColor(clr_verygray)
-        surface.SetMaterial(tex_gradient_l)
-        surface.DrawTexturedRect(0, 0, w, h)
-        surface.SetDrawColor(clr_1)
-        surface.SetMaterial(tex_gradient_d)
-        surface.DrawTexturedRect(0, 0, w, h)
+		LoadoutBackdrop(self, w, h)
     end
     parentPanel:AlphaTo(255, 0.15, 0)
 
     local sw, sh = ScrW(), ScrH()
 
-    local header = vgui.Create("DLabel", parentPanel)
-    header:SetFont("ZCity_Menu_Settings_Small")
-    header:SetTextColor(color_whitey)
-    header:SetPos(MenuUnit(48), MenuUnit(44))
-    header:SetText("ITEM")
-    header:SizeToContents()
-    header.OpenTime = CurTime()
-    header.TargetText = "ITEM"
-    function header:Think()
-        local elapsed = CurTime() - (self.OpenTime or CurTime())
-        local charsToShow = math.floor(elapsed * 18)
-        local target = self.TargetText or ""
-        local len = #target
-        if charsToShow > len then charsToShow = len end
-        if self.TypewriterTarget ~= target then
-            self.TypewriterTarget = target
-            self.LastTypewriterChars = 0
-        end
-        if charsToShow > 0 and charsToShow > (self.LastTypewriterChars or 0) then
-            PlayTypewriterSound()
-        end
-        self.LastTypewriterChars = charsToShow
-        local ntxt = ""
-        for i = 1, len do
-            if i <= charsToShow then
-                ntxt = ntxt .. target:sub(i, i)
-            else
-                ntxt = ntxt .. "#"
-            end
-        end
-        if self:GetText() ~= ntxt then
-            self:SetText(ntxt)
-            self:SizeToContents()
-        end
-    end
-
-    local subtitle = vgui.Create("DLabel", parentPanel)
-    subtitle:SetFont(TRAITOR_MENU_FONT)
-    subtitle:SetTextColor(Color(200, 200, 200, 180))
-    subtitle:SetText("HOMICIDE / Choose a role dossier.")
-    subtitle:SizeToContents()
-    subtitle:SetPos(MenuUnit(48), MenuUnit(90))
+    LoadoutHeader(parentPanel, "HOMICIDE", "CHOOSE A ROLE DOSSIER")
 
     local cardArea = vgui.Create("DPanel", parentPanel)
     cardArea:SetSize(sw, sh)
@@ -1920,7 +1978,7 @@ local function OpenHomicideMenu(rootPanel)
     local cardWidth = cardAreaW * 0.47
     local cardHeight = cardAreaH
     local cardOffscreenOffset = MenuUnit(80)
-    local cardHoverScale = 1.035
+    local cardHoverScale = 1.01
     local cardTitleY = 0.38
     local cardPointsY = 0.5
     local cardDescY = 0.62
@@ -1972,16 +2030,7 @@ local function OpenHomicideMenu(rootPanel)
             self:SetPos(Lerp(FrameTime() * 10, curX, targetX), Lerp(FrameTime() * 10, curY, targetY))
         end
         card.Paint = function(self, w, h)
-            local hover = self.HoveredLerp or 0
-			local accent = info.accent
-			draw.RoundedBox(0, 0, 0, w, h, Color(accent.r * 0.18, accent.g * 0.18, accent.b * 0.18, 245))
-			surface.SetDrawColor(accent.r, accent.g, accent.b, 145 + hover * 110)
-			surface.DrawOutlinedRect(0, 0, w, h, 2)
-			surface.SetDrawColor(accent.r, accent.g, accent.b, 90 + hover * 100)
-			surface.DrawRect(0, 0, MenuUnit(5), h)
-            draw.SimpleText(info.title, "ZCity_Menu_Small", w * 0.5, h * cardTitleY, color_whitey, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            draw.SimpleText(info.points, TRAITOR_MENU_FONT, w * 0.5, h * cardPointsY, Color(225, 225, 225, 230), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            draw.SimpleText(info.desc, TRAITOR_MENU_FONT, w * 0.5, h * cardDescY, Color(225, 225, 225, 210), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            PaintLoadoutCard(self, w, h, info.title, info.points, info.desc, info.accent)
         end
         card.DoClick = function()
             surface.PlaySound(SOUND_MENU_SELECT)
@@ -1989,22 +2038,13 @@ local function OpenHomicideMenu(rootPanel)
         end
     end
 
-    local backBtn = vgui.Create("DLabel", parentPanel)
-    backBtn:SetFont("ZCity_Menu_Settings_Small")
-    backBtn:SetTextColor(color_whitey)
-    backBtn:SetTall(MenuUnit(42))
-    backBtn:SetPos(MenuUnit(15), sh - MenuUnit(62))
-    SetupAnimatedLabel(backBtn, "<- Return", 0, 15)
-    function backBtn:DoClick()
-        surface.PlaySound(SOUND_SETTINGS_CLICK)
+    LoadoutFooter(parentPanel, "<- RETURN", function()
         parentPanel:Remove()
         if IsValid(rootPanel) then
             rootPanel:SetVisible(true)
             rootPanel:AlphaTo(255, 0.15, 0)
         end
-    end
-    backBtn.Think = ThinkAnimatedLabel
-    backBtn.Paint = PaintAnimatedLabel
+    end)
 end
 
 local function GetArenaMode()
@@ -2352,17 +2392,7 @@ local function OpenArenaEditor(rootPanel)
 	surface.PlaySound(SOUND_MENU_SELECT)
     rootPanel:SetVisible(false)
     panel.Paint = function(self, w, h)
-        if hg.DrawBlur then hg.DrawBlur(self, 5) end
-		draw.RoundedBox(0, 0, 0, w, h, clr_verygray)
-		surface.SetDrawColor(menu_gradient_right)
-		surface.SetMaterial(tex_gradient_r)
-		surface.DrawTexturedRect(0, 0, w, h)
-		surface.SetDrawColor(clr_verygray)
-		surface.SetMaterial(tex_gradient_l)
-		surface.DrawTexturedRect(0, 0, w, h)
-		surface.SetDrawColor(clr_1)
-		surface.SetMaterial(tex_gradient_d)
-		surface.DrawTexturedRect(0, 0, w, h)
+		LoadoutBackdrop(self, w, h)
     end
 
 	local sidebarWidth = math.floor(ScrW() / 4.2)
@@ -2835,7 +2865,7 @@ local function AddModeCard(parent, x, y, w, h, title, points, description, align
 	card:SetPos(align == "left" and -w - MenuUnit(80) or ScrW() + MenuUnit(80), y)
 	card.Think = function(self)
 		self.HoveredLerp = LerpFT(0.2, self.HoveredLerp or 0, self:IsHovered() and 1 or 0)
-		local scale = 1 + 0.035 * self.HoveredLerp
+		local scale = 1 + 0.01 * self.HoveredLerp
 		local targetW = self.BaseW * scale
 		local targetH = self.BaseH * scale
 		local targetX = self.TargetX - (targetW - self.BaseW) * 0.5
@@ -2846,13 +2876,7 @@ local function AddModeCard(parent, x, y, w, h, title, points, description, align
 		self:SetPos(Lerp(FrameTime() * 10, curX, targetX), Lerp(FrameTime() * 10, curY, targetY))
 	end
 	card.Paint = function(self, cw, ch)
-		local hover = self.HoveredLerp or 0
-		draw.RoundedBox(0, 0, 0, cw, ch, Color(0, 0, 0, 235))
-		surface.SetDrawColor(255, 255, 255, 120 + hover * 135)
-		surface.DrawOutlinedRect(0, 0, cw, ch, 1)
-		draw.SimpleText(title, "ZCity_Menu_Small", cw * 0.5, ch * 0.38, color_whitey, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText(points, TRAITOR_MENU_FONT, cw * 0.5, ch * 0.5, Color(225, 225, 225, 230), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText(description, TRAITOR_MENU_FONT, cw * 0.5, ch * 0.62, Color(225, 225, 225, 210), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		PaintLoadoutCard(self, cw, ch, title, points, description, nil)
     end
     card.DoClick = function()
         surface.PlaySound(SOUND_MENU_SELECT)
@@ -2863,33 +2887,11 @@ end
 function hg.DrawLoadoutMenu(parentPanel)
     parentPanel:SetAlpha(0)
 	parentPanel.Paint = function(self, w, h)
-		if hg.DrawBlur then hg.DrawBlur(self, 5) end
-		draw.RoundedBox(0, 0, 0, w, h, clr_verygray)
-		surface.SetDrawColor(menu_gradient_right)
-		surface.SetMaterial(tex_gradient_r)
-		surface.DrawTexturedRect(0, 0, w, h)
-		surface.SetDrawColor(clr_verygray)
-		surface.SetMaterial(tex_gradient_l)
-		surface.DrawTexturedRect(0, 0, w, h)
-		surface.SetDrawColor(clr_1)
-		surface.SetMaterial(tex_gradient_d)
-		surface.DrawTexturedRect(0, 0, w, h)
+		LoadoutBackdrop(self, w, h)
 	end
     parentPanel:AlphaTo(255, 0.15, 0)
 
-    local header = vgui.Create("DLabel", parentPanel)
-    header:SetPos(MenuUnit(48), MenuUnit(38))
-    header:SetFont("ZCity_Menu_Settings_Small")
-    header:SetTextColor(color_whitey)
-	header:SetText("LOADOUT")
-    header:SizeToContents()
-
-    local subtitle = vgui.Create("DLabel", parentPanel)
-    subtitle:SetPos(MenuUnit(50), MenuUnit(84))
-    subtitle:SetFont(TRAITOR_MENU_FONT)
-    subtitle:SetTextColor(Color(155, 160, 172))
-	subtitle:SetText("Choose a game mode to configure.")
-    subtitle:SizeToContents()
+    LoadoutHeader(parentPanel, "LOADOUT", "CHOOSE A GAME MODE TO CONFIGURE")
 
     local gap = MenuUnit(24)
     local x = ScrW() * 0.09
@@ -2900,14 +2902,7 @@ function hg.DrawLoadoutMenu(parentPanel)
 	AddModeCard(parentPanel, x, y, cardW, cardH, "HOMICIDE", "2 LOADOUTS", "Judge and Executioner", "left", function() OpenHomicideMenu(parentPanel) end)
 	AddModeCard(parentPanel, x + cardW + gap, y, cardW, cardH, "ARENA", "50 META WEIGHT", "Weapons, armor, medical", "right", function() OpenArenaEditor(parentPanel) end)
 
-    local back = vgui.Create("DLabel", parentPanel)
-    back:SetPos(MenuUnit(15), ScrH() - MenuUnit(62))
-    back:SetFont("ZCity_Menu_Settings_Small")
-    back:SetTextColor(color_whitey)
-    SetupAnimatedLabel(back, "<- Return", 0, 15)
-    back.Think = ThinkAnimatedLabel
-    back.Paint = PaintAnimatedLabel
-    back.DoClick = function() CloseToMainMenu(parentPanel) end
+    LoadoutFooter(parentPanel, "<- RETURN", function() CloseToMainMenu(parentPanel) end)
 end
 
 hg.DrawTraitorLoadout = hg.DrawLoadoutMenu

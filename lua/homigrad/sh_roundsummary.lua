@@ -147,17 +147,30 @@ if SERVER then
 		zb.RSSummaryXPDone = false
 		zb.RSDeathOrder = {}
 		zb.RSKilledMain = nil
+		zb.RSTraitors = {}
 		for _, ply in player.Iterator() do
 			ply.RSStats = NewStats()
 			local karma = tonumber(ply.Karma or (ply.guilt_GetValue and ply:guilt_GetValue()) or 100) or 100
 			ply.RSStats.karmaStart = karma
 			ply.RSStats.karmaLast = karma
 			ply.RSStats.karmaCurrent = karma
+			ply.RSStats.participated = ply:Team() ~= TEAM_SPECTATOR and ply:Alive()
 			ply.RSLastHit = nil
 		end
 	end
 
 	hook.Add("ZB_StartRound", "rem_roundsummary_reset", ResetStats)
+
+	hook.Add("ZB_PreEndRound", "rem_roundsummary_traitors", function()
+		local list = {}
+		for _, ply in player.Iterator() do
+			if ply.isTraitor then
+				list[#list + 1] = { ply = ply, main = ply.MainTraitor == true }
+			end
+		end
+		table.sort(list, function(a, b) return a.main and not b.main end)
+		zb.RSTraitors = list
+	end)
 
 	hook.Add("HomigradDamage", "rem_roundsummary_dmg", function(victim, dmgInfo, hitgroup, ent, harm)
 		if not IsValid(victim) or not victim:IsPlayer() then return end
@@ -712,24 +725,36 @@ if SERVER then
 		net.WriteFloat(tonumber(s.karmaCurrent or ply.Karma or 100) or 100)
 		net.WriteFloat(tonumber(s.karmaEarned or 0) or 0)
 		net.WriteFloat(tonumber(s.karmaLost or 0) or 0)
+
+		-- round stats history extras
+		local participated = s.participated or (s.kills or 0) > 0 or (s.shotsFired or 0) > 0 or (s.damageDealt or 0) > 0 or (s.damageTaken or 0) > 0
+		local mode = CurrentRound and CurrentRound()
+		net.WriteBool(participated and true or false)
+		net.WriteBool(s.survived ~= false)
+		net.WriteUInt(math.Clamp(math.Round(s.damageDealt or 0), 0, 65535), 16)
+		net.WriteUInt(math.Clamp(math.Round(s.damageTaken or 0), 0, 65535), 16)
+		net.WriteString(istable(mode) and tostring(mode.PrintName or mode.name or "") or "")
 	end
 
 	hook.Add("ZB_EndRound", "rem_roundsummary_send", function()
 		local featured, NameOf, RoleFor = ComputeFeatured()
-		if #featured == 0 then return end
-		local first = { featured[1] }
-		ApplyMedalXP(first)
+		local traitors = zb.RSTraitors or {}
+		if #featured == 0 and #traitors == 0 then return end
+		if #featured > 0 then ApplyMedalXP({ featured[1] }) end
+		local shown = {}
+		for i = 1, math.min(#featured, SUMMARY_MAX) do shown[i] = featured[i] end
 
 		if zb.nextround ~= "coop" then
-			local want = CurTime() + math.max(SUMMARY_POST_ROUND, CurrentRound().end_time or 5)
+			local post = #traitors > 0 and (SUMMARY_CLEAR_DELAY + 15) or SUMMARY_POST_ROUND
+			local want = CurTime() + math.max(post, CurrentRound().end_time or 5)
 			zb.END_TIME = math.max(zb.END_TIME or 0, want)
 		end
 
 		for _, receiver in player.Iterator() do
 			receiver.RSStats = receiver.RSStats or NewStats()
 			net.Start("rem_roundsummary")
-				net.WriteUInt(#first, 4)
-				for _, f in ipairs(first) do
+				net.WriteUInt(#shown, 4)
+				for _, f in ipairs(shown) do
 				local ply = f.ply
 				local model = ""
 				local steamid = "0"
@@ -766,6 +791,24 @@ if SERVER then
 			net.WriteString(RealishWinnerName())
 			WriteStats(receiver)
 
+			-- traitor reveal
+			local tn = math.min(#traitors, 7)
+			net.WriteUInt(tn, 4)
+			for i = 1, tn do
+				local t = traitors[i]
+				local tp = t.ply
+				local valid = IsValid(tp)
+				local hasApp = valid and istable(tp.CurAppearance) and tp.CurAppearance.AModel ~= nil
+				net.WriteEntity(tp)
+				net.WriteString(valid and (tp:GetModel() or "") or "")
+				net.WriteString(NameOf(tp))
+				net.WriteBool(valid and tp:Team() == TEAM_SPECTATOR or false)
+				net.WriteTable(hasApp and table.Copy(tp.CurAppearance) or {})
+				net.WriteString(valid and (tp.PlayerClassName or "") or "")
+				net.WriteBool(t.main == true)
+				net.WriteBool(valid and tp:Alive() or false)
+			end
+
 			net.Send(receiver)
 		end
 	end)
@@ -786,6 +829,12 @@ surface.CreateFont("Rem_Sum_XPBig", { font = "ITC Avant Garde Gothic", size = Sc
 surface.CreateFont("Rem_Sum_XP", { font = "ITC Avant Garde Gothic", size = ScreenScale(14), weight = 600, antialias = true, extended = true })
 surface.CreateFont("Rem_Sum_Stat", { font = "ITC Avant Garde Gothic", size = ScreenScale(21), weight = 800, antialias = true, extended = true })
 surface.CreateFont("Rem_Sum_Countdown", { font = "ITC Avant Garde Gothic", size = ScreenScale(23), weight = 800, antialias = true, extended = true })
+
+-- traitor reveal text
+local RS_TRAITOR_FONT = "Cascadia Code SemiLight"
+surface.CreateFont("Rem_Traitor_Heading", { font = RS_TRAITOR_FONT, size = ScreenScale(24), weight = 350, antialias = true, extended = true })
+surface.CreateFont("Rem_Traitor_Name", { font = RS_TRAITOR_FONT, size = ScreenScale(16), weight = 350, antialias = true, extended = true })
+surface.CreateFont("Rem_Traitor_Role", { font = RS_TRAITOR_FONT, size = ScreenScale(12), weight = 350, antialias = true, extended = true })
 
 local AWARD_INFO = {
 	mvp          = { title = "MVP OF THE ROUND", color = Color(232, 190, 70),  desc = function(v) return "Best player around" end },
@@ -836,6 +885,33 @@ local POSES = {
 	{ seqs = { "idle_all_scared", "idle_all_angry", "idle_all_01" },   ang = Angle(0, 24, 0),  cam = Vector(63, -12, 34), fov = 40, target = Vector(0, 0, 35), hy = 0.25, hp = 0.15 },
 	{ seqs = { "idle_all_angry", "idle_all_01", "idle_all_02" },       ang = Angle(0, -9, 0),  cam = Vector(68, 11, 36), fov = 35, target = Vector(0, 0, 38), hy = -0.3, hp = -0.05 },
 }
+
+-- used by the traitor reveal and the MVP cards: combine idle, whole body in frame
+local RS_REVEAL_POSE = {
+	seqs = { "menu_combine", "idle_all_01", "idle_all_02" },
+	ang = Angle(0, 0, 0),
+	cam = Vector(110, 0, 38),
+	target = Vector(0, 0, 38),
+	fov = 30,
+	hy = 0,
+	hp = 0,
+	fit = true,
+	fitHalfHeight = 41, -- half of the vertical space to show (feet to just above the head)
+	fitHalfWidth = 26,
+}
+local RS_REVEAL_FOOT = 0.5 + 38 / (RS_REVEAL_POSE.fitHalfHeight * 2) -- where the feet land, as a fraction of the panel height
+
+-- traitor reveal: whole body, filling its (tall) area
+local RS_TRAITOR_POSE = table.Copy(RS_REVEAL_POSE)
+RS_TRAITOR_POSE.target = Vector(0, 0, 37.8)
+RS_TRAITOR_POSE.fitHalfHeight = 38
+RS_TRAITOR_POSE.fitHalfWidth = 14
+local RS_TRAITOR_FOOT = 0.5 + 37.8 / (RS_TRAITOR_POSE.fitHalfHeight * 2)
+
+-- MVP cards: closer framing, feet near the bottom edge of the card
+local RS_MVP_POSE = table.Copy(RS_REVEAL_POSE)
+RS_MVP_POSE.target = Vector(0, 0, 35)
+RS_MVP_POSE.fitHalfHeight = 36
 
 local RS_Container
 local RS_Sound
@@ -970,6 +1046,84 @@ local function ApplyAppearanceData(ent, ply, appearance, playerClassName)
 	return true
 end
 
+-- 0..1 brightness for panels that "light up" (pnl.RSLightStart); flickers like a lamp turning on
+local function RS_UpdateLight(pnl)
+	if not pnl.RSLightStart then
+		pnl.RSLightNow = 1
+		return 1
+	end
+	local t = CurTime() - pnl.RSLightStart
+	if t <= 0 then
+		pnl.RSLightNow = 0
+		return 0
+	end
+	local f = math.Clamp(t / 0.8, 0, 1)
+	f = f * f * (3 - 2 * f)
+	if t < 0.5 then
+		if CurTime() > (pnl.RSFlickNext or 0) then
+			pnl.RSFlickNext = CurTime() + math.Rand(0.03, 0.09)
+			pnl.RSFlick = math.random() < 0.4 and 0.12 or 1
+		end
+		f = f * (pnl.RSFlick or 1)
+	end
+	pnl.RSLightNow = f
+	return f
+end
+
+-- soft cone of light from the top of the panel down to the feet, plus a pool on the floor
+local function RS_PaintSpotlight(w, h, footY, f)
+	if not f or f <= 0 then return end
+	local cx = w / 2
+	local topW = w * 0.12
+	local botW = w * 0.62
+	local step = 3
+	for y = 0, footY, step do
+		local p = y / math.max(footY, 1)
+		local bw = Lerp(p, topW, botW)
+		local a = (28 + 22 * p) * f
+		surface.SetDrawColor(255, 248, 225, a)
+		surface.DrawRect(cx - bw / 2, y, bw, step)
+	end
+	-- floor pool (stacked ellipses, brighter in the middle)
+	for i = 4, 1, -1 do
+		local rx = botW * 0.55 * (i / 4)
+		local ry = rx * 0.18
+		local poly = {}
+		for k = 0, 23 do
+			local ang = (k / 24) * math.pi * 2
+			poly[#poly + 1] = { x = cx + math.cos(ang) * rx, y = footY + math.sin(ang) * ry }
+		end
+		draw.NoTexture()
+		surface.SetDrawColor(255, 248, 225, 18 * f)
+		surface.DrawPoly(poly)
+	end
+end
+
+-- keeps the whole body inside the panel: measures feet-to-head on screen while drawing
+-- and nudges the camera distance until it matches the panel size
+local function RS_EnableAutoFit(mp, pose)
+	if not pose.fit then return end
+	local oldPre = mp.PreDrawModel
+	mp.PreDrawModel = function(self, ent)
+		local up = Vector(0, 0, pose.fitHalfHeight)
+		local side = Vector(0, pose.fitHalfWidth, 0)
+		local top = (pose.target + up):ToScreen()
+		local bot = (pose.target - up):ToScreen()
+		local left = (pose.target - side):ToScreen()
+		local right = (pose.target + side):ToScreen()
+		local spanH = math.abs(bot.y - top.y)
+		local spanW = math.abs(right.x - left.x)
+		local pw, ph = math.max(self:GetWide(), 1), math.max(self:GetTall(), 1)
+		if spanH > 1 and spanW > 1 and self.RSFitDistUsed then
+			local ratio = math.max(spanH / ph, spanW / pw)
+			if math.abs(ratio - 1) > 0.01 then
+				self.RSFitDist = math.Clamp(self.RSFitDistUsed * ratio, 20, 2000)
+			end
+		end
+		if oldPre then return oldPre(self, ent) end
+	end
+end
+
 local function SetupModel(mp, ply, model, pose, spec, appearance, playerClassName)
 	local mdl
 	if spec then
@@ -1033,6 +1187,16 @@ local function SetupModel(mp, ply, model, pose, spec, appearance, playerClassNam
 		end
 		local parent = self:GetParent()
 		if IsValid(parent) and IsValid(parent.RSCard) then parent = parent.RSCard end
+		if IsValid(parent) and parent.RSLightStart then
+			local f = RS_UpdateLight(parent)
+			self:SetAmbientLight(Color(40 * f, 40 * f, 46 * f))
+			self:SetDirectionalLight(BOX_TOP, Color(255 * f, 248 * f, 228 * f))
+			self:SetDirectionalLight(BOX_FRONT, Color(170 * f, 168 * f, 160 * f))
+			self:SetDirectionalLight(BOX_RIGHT, Color(70 * f, 70 * f, 78 * f))
+			self:SetDirectionalLight(BOX_LEFT, Color(60 * f, 60 * f, 72 * f))
+			self:SetDirectionalLight(BOX_BACK, Color(30 * f, 30 * f, 40 * f))
+			self:SetDirectionalLight(BOX_BOTTOM, Color(0, 0, 0))
+		end
 		local walkFrac = 1
 		if IsValid(parent) and parent.RSWalkStart then
 			walkFrac = math.Clamp((CurTime() - parent.RSWalkStart) / math.max(parent.RSWalkTime or 1, 0.001), 0, 1)
@@ -1053,8 +1217,20 @@ local function SetupModel(mp, ply, model, pose, spec, appearance, playerClassNam
 			ent:SetPoseParameter("move_y", 0)
 		end
 		self:SetFOV(pose.fov)
-		self:SetCamPos(pose.cam)
-		self:SetLookAng(look)
+		if pose.fit then
+			-- back the camera off until the whole body fits this panel's shape
+			local pw, ph = math.max(self:GetWide(), 1), math.max(self:GetTall(), 1)
+			local halfTan = math.tan(math.rad(pose.fov / 2))
+			local distH = pose.fitHalfHeight / (halfTan / (pw / ph))
+			local distW = pose.fitHalfWidth / halfTan
+			local dist = self.RSFitDist or math.max(distH, distW)
+			self.RSFitDistUsed = dist
+			self:SetCamPos(pose.target + Vector(dist, 0, 0))
+			self:SetLookAng(Angle(0, 180, 0))
+		else
+			self:SetCamPos(pose.cam)
+			self:SetLookAng(look)
+		end
 	end
 
 	if spec then
@@ -1109,7 +1285,7 @@ end
 local function BuildCard(parent, data, slot)
 	local sw, sh = ScrW(), ScrH()
 	local big = slot == 1
-	local pose = POSES[slot] or POSES[1]
+	local pose = RS_MVP_POSE
 
 	local refW, refH = math.min(sw, 1920), math.min(sh, 1080)
 	local scale = math.min(refW / 1920, refH / 1080)
@@ -1135,9 +1311,10 @@ local function BuildCard(parent, data, slot)
 	end
 
 	card.Paint = function(self, cw, ch)
+		local lit = self.RSLightStart and (self.RSLightNow or 0) or 1
 		surface.SetDrawColor(0, 0, 0, big and 26 or 18)
 		surface.DrawRect(0, 0, cw, ch)
-		surface.SetDrawColor(255, 255, 255, 110)
+		surface.SetDrawColor(255, 255, 255, 110 * lit)
 		surface.DrawOutlinedRect(0, 0, cw, ch, 1)
 
 		local rise = math.floor(infoH * self.RSInfo)
@@ -1152,15 +1329,17 @@ local function BuildCard(parent, data, slot)
 		end
 	end
 
+	local modelTop = math.floor(h * 0.12)
+	local modelH = h - modelTop - math.floor(h * 0.01)
 	local modelWrap = vgui.Create("DPanel", card)
-	modelWrap:SetSize(w, h)
-	modelWrap:SetPos(0, 0)
+	modelWrap:SetSize(w, modelH)
+	modelWrap:SetPos(0, modelTop)
 	modelWrap:SetMouseInputEnabled(false)
 	modelWrap.RSCard = card
 	modelWrap.Paint = function() end
 
 	local mp = vgui.Create("DModelPanel", modelWrap)
-	mp:SetSize(w, h)
+	mp:SetSize(w, modelH)
 	mp:SetPos(0, 0)
 	mp:SetMouseInputEnabled(false)
 	SetupModel(mp, data.ply, data.model, pose, data.spec, data.appearance, data.playerclass)
@@ -1310,14 +1489,161 @@ local function IsRTVActive()
 	return zb and zb.IsRTVActive and zb.IsRTVActive()
 end
 
-local function ShowSummary(featured, winnerTeam)
+local RS_TRAITOR_RED = Color(200, 40, 40)
+
+-- one traitor standing on the reveal line: model on top, name + role underneath
+-- filled circle / ellipse helpers for the lamp
+local function RS_Ellipse(cx, cy, rx, ry, seg)
+	local poly = {}
+	seg = seg or 28
+	for k = 0, seg - 1 do
+		local ang = (k / seg) * math.pi * 2
+		poly[#poly + 1] = { x = cx + math.cos(ang) * rx, y = cy + math.sin(ang) * ry }
+	end
+	surface.DrawPoly(poly)
+end
+
+-- trapezoid textured top-to-bottom with the given material (u along x, v along y)
+local function RS_TexTrapezoid(cx, y1, w1, y2, w2, cxBottom)
+	cxBottom = cxBottom or cx
+	surface.DrawPoly({
+		{ x = cx - w1 / 2, y = y1, u = 0, v = 0 },
+		{ x = cx + w1 / 2, y = y1, u = 1, v = 0 },
+		{ x = cxBottom + w2 / 2, y = y2, u = 1, v = 1 },
+		{ x = cxBottom - w2 / 2, y = y2, u = 0, v = 1 },
+	})
+end
+
+local RS_LAMP_WARM = { r = 255, g = 236, b = 196 }
+
+-- a light shining down on the traitor from somewhere above the screen:
+-- soft cone, pool of light on the floor, a little dust drifting through it
+local function RS_PaintLamp(w, h, shadeBottom, floorY, f, seed)
+	if not f or f <= 0 then return end
+	local t = RealTime()
+	local cx = w / 2
+	local topY = -h * 0.05
+	local topW = w * 0.16
+	local beamBottomW = w * 0.78
+	local wr = RS_LAMP_WARM
+
+	surface.SetMaterial(RS_GradU)
+	local layers = {
+		{ 1.00, 26 },
+		{ 0.78, 30 },
+		{ 0.52, 38 },
+		{ 0.30, 42 },
+	}
+	for _, l in ipairs(layers) do
+		surface.SetDrawColor(wr.r, wr.g, wr.b, l[2] * f)
+		RS_TexTrapezoid(cx, topY, topW * (0.5 + 0.5 * l[1]), floorY, beamBottomW * l[1])
+	end
+
+	-- faint even fill so the cone still reaches the floor
+	draw.NoTexture()
+	surface.SetDrawColor(wr.r, wr.g, wr.b, 9 * f)
+	surface.DrawPoly({
+		{ x = cx - topW * 0.5, y = topY },
+		{ x = cx + topW * 0.5, y = topY },
+		{ x = cx + beamBottomW * 0.5, y = floorY },
+		{ x = cx - beamBottomW * 0.5, y = floorY },
+	})
+
+	-- pool of light on the floor
+	local poolRX = beamBottomW * 0.52
+	for i = 6, 1, -1 do
+		local k = i / 6
+		surface.SetDrawColor(wr.r, wr.g, wr.b, (10 + (1 - k) * 18) * f)
+		RS_Ellipse(cx, floorY, poolRX * k, poolRX * 0.13 * k)
+	end
+
+	-- dust drifting through the light
+	for i = 1, 10 do
+		local p = ((t * (0.04 + i * 0.007) + i * 0.137 + seed) % 1)
+		local my = Lerp(p, 10, floorY - 10)
+		local spread = Lerp(p, topW * 0.4, beamBottomW * 0.4)
+		local mx = cx + math.sin(t * 0.6 + i * 2.3 + seed) * spread
+		local ma = math.sin(p * math.pi) * 70 * f
+		surface.SetDrawColor(255, 245, 225, ma)
+		surface.DrawRect(mx, my, 2, 2)
+	end
+end
+
+local function BuildTraitorFigure(parent, data, x, y, w, h, walkDelay)
+	local labelH = math.floor(ScrH() * 0.075)
+	local fig
+
+	-- the lamp hangs above this traitor and lights them up; it sits behind the model
+	local lamp = vgui.Create("DPanel", parent)
+	lamp:SetPos(x, 0)
+	lamp:SetSize(w, ScrH())
+	lamp:SetMouseInputEnabled(false)
+	local seed = math.Rand(0, 10)
+	local shadeBottom = y + math.floor(labelH * 0.8)
+	local floorY = ScrH() - math.floor(ScrH() * 0.012)
+	lamp.Paint = function(self, lw, lh)
+		RS_PaintLamp(lw, lh, shadeBottom, floorY, IsValid(fig) and (fig.RSLightNow or 0) or 0, seed)
+	end
+
+	fig = vgui.Create("DPanel", parent)
+	fig:SetPos(x, y)
+	fig:SetSize(w, h)
+	fig:SetPaintBackground(false)
+	fig:SetMouseInputEnabled(false)
+	fig:SetAlpha(0)
+	fig.RSSettled = true
+	fig.RSLightStart = CurTime() + walkDelay
+	fig.Paint = function() end
+
+	local mp = vgui.Create("DModelPanel", fig)
+	mp:SetPos(0, labelH)
+	mp:SetSize(w, h - labelH)
+	mp:SetMouseInputEnabled(false)
+	SetupModel(mp, data.ply, data.model, RS_TRAITOR_POSE, data.spec, data.appearance, data.playerclass)
+	RS_EnableAutoFit(mp, RS_TRAITOR_POSE)
+
+	local label = vgui.Create("DPanel", fig)
+	label:SetPos(0, h - labelH - math.floor(ScrH() * 0.02))
+	label:SetSize(w, labelH)
+	label:SetAlpha(0)
+	label.Paint = function(self, lw, lh)
+		local a = self:GetAlpha()
+		draw.SimpleTextOutlined(string.upper(data.name or "Unknown"), "Rem_Traitor_Name", lw / 2, 0, Color(245, 245, 245, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, Color(0, 0, 0, a))
+		local role = data.main and "MAIN TRAITOR" or "TRAITOR"
+		if not data.alive then role = role .. "  /  DEAD" end
+		local rc = data.main and RS_TRAITOR_RED or Color(160, 60, 60)
+		draw.SimpleTextOutlined(role, "Rem_Traitor_Role", lw / 2, math.floor(lh * 0.5), Color(rc.r, rc.g, rc.b, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, Color(0, 0, 0, a))
+	end
+
+	fig:SetAlpha(255)
+	timer.Simple(walkDelay, function()
+		if IsValid(fig) then surface.PlaySound("buttons/lightswitch2.wav") end
+	end)
+	timer.Simple(walkDelay + 0.7, function()
+		if IsValid(label) then label:AlphaTo(255, 0.35, 0) end
+	end)
+	return fig
+end
+
+local function ShowSummary(featured, winnerTeam, traitors)
 	if IsRTVActive() then return end
 
 	if IsValid(RS_Container) then RS_Container:Remove() end
 
 	local sw, sh = ScrW(), ScrH()
-	local data = featured[1]
-	if not data then return end
+	traitors = traitors or {}
+	featured = featured or {}
+	if #featured == 0 and #traitors == 0 then return end
+
+	local hasTraitors = #traitors > 0
+
+	-- timeline (seconds after the screen appears)
+	local T_TEXT = 0.6
+	local T_TRAITORS = 1.9
+	local T_MVP = hasTraitors and 6.2 or 0.8
+	local T_COUNTDOWN = T_MVP + 2.2
+	local T_ENDFADE = T_COUNTDOWN + 5.6
+	local T_CLOSE = T_ENDFADE + 1.5
 
 	local container = vgui.Create("DPanel")
 	container:SetSize(sw, sh)
@@ -1330,7 +1656,6 @@ local function ShowSummary(featured, winnerTeam)
 	RS_Container = container
 	container:MakePopup()
 	container.StartTime = CurTime()
-	container.RevealedStats = 0
 	container.CountdownStart = 0
 	container.LastCountdown = -1
 	container.CountPunch = 0
@@ -1347,83 +1672,149 @@ local function ShowSummary(featured, winnerTeam)
 	bg:AlphaTo(255, 0.8, 0)
 	container.BG = bg
 
-	local stats = data.stats or {}
-	local rows = {}
-	if stats.killedBy and stats.killedBy ~= "" then rows[#rows + 1] = "killed by: " .. stats.killedBy end
-	rows[#rows + 1] = "kills: " .. (stats.kills or 0)
-	rows[#rows + 1] = "headshots: " .. (stats.headshots or 0)
-	rows[#rows + 1] = "kicks: " .. (stats.kicks or 0)
-	rows[#rows + 1] = "buttstock shoves: " .. (stats.buttstockShoves or 0)
-	rows[#rows + 1] = "pushes: " .. (stats.pushes or 0)
-	local acc = (stats.shotsFired or 0) > 0 and math.floor(((stats.shotsHit or 0) / stats.shotsFired) * 100) or 0
-	rows[#rows + 1] = "accuracy: " .. acc .. "%"
-	rows[#rows + 1] = "shots fired: " .. (stats.shotsFired or 0)
-	rows[#rows + 1] = "preferred weapon type: " .. (stats.weaponType or "other")
-	if data.mapHasWindows then rows[#rows + 1] = "windows broken: " .. (stats.windowsBroken or 0) end
-	rows[#rows + 1] = "consumables consumed: " .. (stats.consumablesConsumed or 0)
-	rows[#rows + 1] = "current karma: " .. math.Round(stats.karmaCurrent or 100, 1)
-	rows[#rows + 1] = "karma earned: " .. math.Round(stats.karmaEarned or 0, 1)
-	rows[#rows + 1] = "karma lost: " .. math.Round(stats.karmaLost or 0, 1)
+	------------------------------------------------------------------
+	-- 1) "The traitor(s) were..." then the reveal
+	------------------------------------------------------------------
+	local traitorGroup
+	if hasTraitors then
+		traitorGroup = vgui.Create("DPanel", container)
+		traitorGroup:SetSize(sw, sh)
+		traitorGroup:SetPos(0, 0)
+		traitorGroup:SetPaintBackground(false)
+		traitorGroup:SetMouseInputEnabled(false)
 
-	local statPanel = vgui.Create("DPanel", container)
-	statPanel:SetPos(math.floor(sw * 0.055), math.floor(sh * 0.08))
-	statPanel:SetSize(math.floor(sw * 0.5), math.floor(sh * 0.82))
-	statPanel:SetPaintBackground(false)
-	statPanel.Rows = rows
-	statPanel.Paint = function(self, w, h)
-		local now = CurTime()
-		local reveal = math.Clamp(math.floor((now - container.StartTime - 0.7) / 0.3) + 1, 0, #self.Rows)
-		if reveal > container.RevealedStats then
-			container.RevealedStats = reveal
-			surface.PlaySound("ui/rem_tik.wav")
+		local heading = #traitors == 1 and "THE TRAITOR WAS" or "THE TRAITORS WERE"
+		local headingPanel = vgui.Create("DPanel", traitorGroup)
+		traitorGroup.Heading = headingPanel
+		headingPanel:SetSize(sw, math.floor(sh * 0.09))
+		headingPanel:SetPos(0, math.floor(sh * 0.035))
+		headingPanel.LastChars = 0
+		headingPanel.Paint = function(self, w, h)
+			local t = CurTime() - container.StartTime - T_TEXT
+			if t < 0 then return end
+			local chars = math.min(#heading, math.floor(t * 18))
+			if chars > self.LastChars then
+				self.LastChars = chars
+				if heading:sub(chars, chars) ~= " " then surface.PlaySound("ui/rem_tik.wav") end
+			end
+			draw.SimpleTextOutlined(heading:sub(1, chars), "Rem_Traitor_Heading", w / 2, h / 2, Color(240, 240, 240), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, Color(0, 0, 0, 235))
 		end
-		for i = 1, reveal do
-			local y = (i - 1) * ScreenScale(21)
-			local a = math.Clamp((now - container.StartTime - 0.7 - (i - 1) * 0.3) / 0.18, 0, 1) * 255
-			draw.SimpleText(string.upper(self.Rows[i]), "Rem_Sum_Stat", 0, y, Color(235, 235, 235, a), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+
+		-- main traitor in the middle, the rest spread out on both sides
+		local main, others = nil, {}
+		for _, t in ipairs(traitors) do
+			if t.main and not main then main = t else others[#others + 1] = t end
 		end
+		local arranged = {}
+		local n = #traitors
+		local center = math.ceil(n / 2)
+		local oi = 1
+		for i = 1, n do
+			if main and i == center then
+				arranged[i] = main
+			else
+				arranged[i] = others[oi]
+				oi = oi + 1
+			end
+		end
+
+		local slotW = sw / n
+		-- figures may overlap their neighbours a little; the panels are see-through
+		local figW = math.floor(math.min(sw * 0.42, slotW * 1.25))
+		local figY = math.floor(sh * 0.125)
+		local figH = sh - figY
+
+		timer.Simple(T_TRAITORS, function()
+			if not IsValid(traitorGroup) then return end
+			surface.PlaySound("rem_newroundreveal.wav")
+			local nextDelay = 0
+			local lightOrder = {}
+			for i, data in ipairs(arranged) do
+				if not data.main then lightOrder[i] = nextDelay nextDelay = nextDelay + 0.35 end
+			end
+			for i, data in ipairs(arranged) do
+				if data.main then lightOrder[i] = nextDelay + 0.3 end
+			end
+			for i, data in ipairs(arranged) do
+				local cx = slotW * (i - 0.5)
+				local isMain = data.main
+				local fw = isMain and math.floor(figW * 1.08) or figW
+				local fy = isMain and figY - math.floor(sh * 0.025) or figY
+				local fh = sh - fy
+				BuildTraitorFigure(traitorGroup, data, math.floor(cx - fw / 2), fy, fw, fh, lightOrder[i] or 0)
+			end
+			-- keep the heading readable over the big models
+			if IsValid(traitorGroup.Heading) then traitorGroup.Heading:MoveToFront() end
+		end)
+
+		-- clear the stage for the MVPs
+		timer.Simple(T_MVP - 0.6, function()
+			if not IsValid(traitorGroup) then return end
+			traitorGroup:AlphaTo(0, 0.5, 0, function()
+				if IsValid(traitorGroup) then traitorGroup:Remove() end
+			end)
+		end)
 	end
 
-	local modelFrameW = math.floor(sw * 0.31)
-	local modelFrameH = math.floor(sh * 0.88)
-	local modelFrame = vgui.Create("DPanel", container)
-	modelFrame:SetSize(modelFrameW, modelFrameH)
-	modelFrame:SetPos(sw - modelFrameW - math.floor(sw * 0.04), math.floor(sh * 0.06))
-	modelFrame:SetAlpha(0)
-	modelFrame:SetPaintBackground(false)
-	modelFrame.RSSettled = false
-	modelFrame.RSWalkStart = CurTime() + 0.2
-	modelFrame.RSWalkTime = 1.35
-	modelFrame.RSWalkDistance = 145
-	modelFrame.Paint = function() end
-	modelFrame:AlphaTo(255, 0.35, 0.15)
-	timer.Simple(1.55, function()
-		if IsValid(modelFrame) then modelFrame.RSSettled = true end
+	------------------------------------------------------------------
+	-- 2) MVPs of the round
+	------------------------------------------------------------------
+	timer.Simple(T_MVP, function()
+		if not IsValid(container) or #featured == 0 then return end
+
+		local mvpTitle = vgui.Create("DPanel", container)
+		mvpTitle:SetSize(sw, math.floor(sh * 0.06))
+		mvpTitle:SetPos(0, math.floor(sh * 0.015))
+		mvpTitle:SetAlpha(0)
+		mvpTitle.Paint = function(self, w, h)
+			local a = self:GetAlpha()
+			draw.SimpleTextOutlined(#featured == 1 and "MVP OF THE ROUND" or "MVPS OF THE ROUND", "Rem_Sum_XPBig", w / 2, h / 2, Color(232, 190, 70, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, a))
+		end
+		mvpTitle:AlphaTo(255, 0.4, 0)
+		container.MVPTitle = mvpTitle
+
+		-- slot 1 (the top MVP) in the middle, others on the sides
+		local order = { 2, 1, 3 }
+		local built = {}
+		for _, slot in ipairs(order) do
+			local data = featured[slot]
+			if data then
+				local card, w, h = BuildCard(container, data, slot)
+				built[#built + 1] = { card = card, w = w, h = h, slot = slot }
+			end
+		end
+
+		local gap = math.floor(sw * 0.02)
+		local totalW = -gap
+		for _, b in ipairs(built) do totalW = totalW + b.w + gap end
+		local x = math.floor((sw - totalW) / 2)
+		for i, b in ipairs(built) do
+			local card = b.card
+			local y = sh - b.h - math.floor(sh * 0.025)
+			card:SetPos(x, y)
+			card.OffX, card.OffY = x, sh
+			local lightDelay = b.slot == 1 and 0.75 or 0.3 * (i - 1)
+			card.RSSettled = true
+			card.RSLightStart = CurTime() + lightDelay
+			card:SetAlpha(255)
+			container.Cards[#container.Cards + 1] = card
+			timer.Simple(lightDelay, function()
+				if IsValid(card) then surface.PlaySound("buttons/lightswitch2.wav") end
+			end)
+			timer.Simple(lightDelay + 0.8, function()
+				if not IsValid(card) then return end
+				card.RSReveal = true
+				if IsValid(card.RSTitle) then card.RSTitle:AlphaTo(255, 0.35, 0) end
+				if IsValid(card.RSInfoWrap) then card.RSInfoWrap:AlphaTo(255, 0.35, 0.1) end
+			end)
+			x = x + b.w + gap
+		end
+		surface.PlaySound("ui/rem_success.wav")
 	end)
 
-	local mvpText = vgui.Create("DPanel", modelFrame)
-	mvpText:SetSize(modelFrameW, math.floor(sh * 0.13))
-	mvpText:SetPos(0, 0)
-	mvpText:SetAlpha(0)
-	mvpText.Paint = function(self, w, h)
-		local a = self:GetAlpha()
-		draw.SimpleTextOutlined("MVP OF THE ROUND", "Rem_Sum_Award", w / 2, 0, Color(232, 190, 70, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, Color(0, 0, 0, a))
-		draw.SimpleTextOutlined(string.upper(data.name or "Unknown"), "Rem_Sum_Name", w / 2, ScreenScale(20), Color(245, 245, 245, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, Color(0, 0, 0, a))
-	end
-	mvpText:AlphaTo(255, 0.4, 1.3)
-
-	local modelHolder = vgui.Create("DPanel", modelFrame)
-	modelHolder:SetSize(modelFrameW, modelFrameH - math.floor(sh * 0.1))
-	modelHolder:SetPos(0, math.floor(sh * 0.08))
-	modelHolder:SetPaintBackground(false)
-	modelHolder.RSCard = modelFrame
-
-	local mp = vgui.Create("DModelPanel", modelHolder)
-	mp:SetSize(modelHolder:GetWide(), modelHolder:GetTall())
-	mp:SetPos(0, 0)
-	mp:SetMouseInputEnabled(false)
-	SetupModel(mp, data.ply, data.model, POSES[1], data.spec, data.appearance, data.playerclass)
-
+	------------------------------------------------------------------
+	-- countdown / winner / fade out
+	------------------------------------------------------------------
 	local countdown = vgui.Create("DPanel", container)
 	countdown:SetSize(math.floor(sw * 0.34), math.floor(sh * 0.12))
 	countdown:SetPos(sw - countdown:GetWide() - math.floor(sw * 0.035), sh - countdown:GetTall() - math.floor(sh * 0.04))
@@ -1438,24 +1829,23 @@ local function ShowSummary(featured, winnerTeam)
 		container.CountPunch = Lerp(FrameTime() * 8, container.CountPunch, 0)
 		local scale = 1 + container.CountPunch * 0.08
 		local x, y = w, h / 2
-		local old = Matrix()
-		old:Translate(Vector(x, y, 0))
-		old:Scale(Vector(scale, scale, 1))
-		old:Translate(Vector(-x, -y, 0))
-		cam.PushModelMatrix(old)
-		draw.SimpleText("next round in: " .. left, "Rem_Sum_Countdown", w, h / 2, Color(245, 245, 245), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+		local m = Matrix()
+		m:Translate(Vector(x, y, 0))
+		m:Scale(Vector(scale, scale, 1))
+		m:Translate(Vector(-x, -y, 0))
+		cam.PushModelMatrix(m)
+		draw.SimpleTextOutlined("next round in: " .. left, "Rem_Sum_Countdown", w, h / 2, Color(245, 245, 245), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER, 2, Color(0, 0, 0, 230))
 		cam.PopModelMatrix()
 	end
 
-	timer.Simple(4, function()
+	timer.Simple(T_COUNTDOWN, function()
 		if not IsValid(container) then return end
 		container.CountdownStart = CurTime()
 		container.CountPunch = 1
-		surface.PlaySound("ui/rem_success.wav")
 	end)
 
 	if winnerTeam and winnerTeam ~= "" then
-		timer.Simple(6.5, function()
+		timer.Simple(T_COUNTDOWN + 2.3, function()
 			if not IsValid(container) then return end
 			container.RSWinnerStart = CurTime()
 			surface.PlaySound("rem_newroundreveal.wav")
@@ -1471,6 +1861,7 @@ local function ShowSummary(featured, winnerTeam)
 			local p = math.Clamp(t / 0.5, 0, 1)
 			local ease = p * p * (3 - 2 * p)
 			local a = 255 * ease
+			if IsValid(container.MVPTitle) then container.MVPTitle:SetAlpha(255 - a) end
 			local col = Color(255, 240, 90, a)
 			local teamInfo
 			if RealishTeams then
@@ -1481,9 +1872,6 @@ local function ShowSummary(featured, winnerTeam)
 			if teamInfo and teamInfo.color then col = Color(teamInfo.color.r, teamInfo.color.g, teamInfo.color.b, a) end
 			draw.SimpleTextOutlined("TEAM WON: " .. string.upper(winnerTeam), "Rem_Sum_Countdown", w2 / 2, h2 / 2, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, Color(0, 0, 0, math.min(230, a)))
 		end
-		timer.Simple(SUMMARY_LIFETIME - 1, function()
-			if IsValid(winnerPanel) then winnerPanel:Remove() end
-		end)
 	end
 
 	local endFade = vgui.Create("DPanel", container)
@@ -1495,22 +1883,485 @@ local function ShowSummary(featured, winnerTeam)
 		surface.SetDrawColor(0, 0, 0, self:GetAlpha())
 		surface.DrawRect(0, 0, w, h)
 	end
-	timer.Simple(10, function()
-		if IsValid(endFade) then 
-			endFade:AlphaTo(255, 0.75, 0, function()
-				if IsValid(statPanel) then statPanel:Remove() end
-				if IsValid(modelFrame) then modelFrame:Remove() end
-				if IsValid(countdown) then countdown:Remove() end
-			end)
+	timer.Simple(T_ENDFADE, function()
+		if IsValid(endFade) then
+			endFade:MoveToFront()
+			endFade:AlphaTo(255, 0.75, 0)
 		end
 	end)
 
-	timer.Create("rem_roundsummary_close", SUMMARY_LIFETIME, 1, function()
+	timer.Create("rem_roundsummary_close", T_CLOSE, 1, function()
 		if IsValid(RS_Container) and RS_Container == container then
 			CloseSummary()
 		end
 	end)
 end
+
+-- ============================================================
+-- Round stats history (last 5 rounds) + ESC menu page
+-- ============================================================
+
+local RSH_MAX = 5
+local RSH_FILE = "zcity_roundstats_history.json"
+
+hg.RoundStatsHistory = hg.RoundStatsHistory or nil
+
+local function RSH_Load()
+	if hg.RoundStatsHistory then return hg.RoundStatsHistory end
+	local raw = file.Read(RSH_FILE, "DATA")
+	local tbl = raw and util.JSONToTable(raw) or nil
+	hg.RoundStatsHistory = istable(tbl) and tbl or {}
+	return hg.RoundStatsHistory
+end
+
+local function RSH_Save()
+	file.Write(RSH_FILE, util.TableToJSON(hg.RoundStatsHistory or {}, false))
+end
+
+local function RSH_Accuracy(s)
+	if (s.shotsFired or 0) <= 0 then return 0 end
+	return math.Clamp(math.floor(((s.shotsHit or 0) / s.shotsFired) * 100), 0, 100)
+end
+
+-- Rough performance score -> letter grade
+local function RSH_Grade(s)
+	local score = 0
+	score = score + (s.kills or 0) * 20
+	score = score + math.min(s.headshots or 0, 10) * 4
+	score = score + math.min((s.damageDealt or 0) * 0.15, 40)
+	if (s.shotsFired or 0) >= 3 then
+		score = score + RSH_Accuracy(s) * 0.25
+	end
+	if s.survived then score = score + 35 end
+	score = score + math.min((s.karmaEarned or 0) * 0.5, 10)
+	score = score - (s.karmaLost or 0) * 1.5
+
+	if score >= 100 then return "S"
+	elseif score >= 75 then return "A"
+	elseif score >= 55 then return "B"
+	elseif score >= 35 then return "C"
+	elseif score >= 15 then return "D"
+	end
+	return "F"
+end
+
+local RSH_GradeColors = {
+	S = Color(232, 190, 70),
+	A = Color(110, 200, 95),
+	B = Color(80, 160, 220),
+	C = Color(225, 225, 225),
+	D = Color(220, 140, 60),
+	F = Color(200, 55, 55),
+}
+
+function hg.RecordRoundStats(stats, extra)
+	local history = RSH_Load()
+	local entry = table.Copy(stats)
+	entry.mode = extra.mode or ""
+	entry.map = game.GetMap()
+	entry.time = os.time()
+	entry.winner = extra.winner or ""
+	entry.mapHasWindows = extra.mapHasWindows and true or false
+	entry.grade = RSH_Grade(entry)
+
+	table.insert(history, 1, entry)
+	while #history > RSH_MAX do
+		table.remove(history)
+	end
+	RSH_Save()
+
+	if IsValid(hg.RoundStatsPanel) and hg.RoundStatsPanel.Refresh then
+		hg.RoundStatsPanel:Refresh()
+	end
+end
+
+local function RSH_CreateFonts()
+	local scale = math.min(ScrW(), ScrH()) / 1000
+	local mono = "IBM Plex Mono"
+	surface.CreateFont("ZCity_RSH_Title", { font = mono, size = math.max(16, math.floor(32 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_RSH_Small", { font = mono, size = math.max(14, math.floor(22 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_RSH_Tiny", { font = mono, size = math.max(12, math.floor(16 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_RSH_Stat", { font = mono, size = math.max(12, math.floor(18 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_RSH_Grade", { font = mono, size = math.max(30, math.floor(76 * scale)), weight = 600, antialias = true })
+end
+hook.Add("OnScreenSizeChanged", "ZCity_RSH_Fonts", RSH_CreateFonts)
+RSH_CreateFonts()
+
+local function RSH_Unit(num)
+	return math.floor(num * math.min(ScrW(), ScrH()) / 1000)
+end
+
+-- palette borrowed from the appearance editor
+local rsh_white = Color(240, 240, 240, 240)
+local rsh_text = Color(220, 220, 220)
+local rsh_text_idle = Color(188, 188, 188)
+local rsh_text_dim = Color(140, 140, 140)
+local rsh_label = Color(132, 132, 132)
+local rsh_accent = Color(225, 225, 225)
+local rsh_panel = Color(28, 28, 28, 180)
+local rsh_panel_hi = Color(48, 48, 48, 235)
+local rsh_btn = Color(31, 31, 31, 205)
+local rsh_border = Color(180, 180, 180)
+local rsh_dark = Color(8, 8, 8, 255)
+local RSH_CLICK = "ui/rem_click.wav"
+
+local function RSH_AgoText(t)
+	if not t then return "" end
+	local d = math.max(0, os.time() - t)
+	if d < 60 then return "just now" end
+	if d < 3600 then
+		local m = math.floor(d / 60)
+		return m .. " minute" .. (m == 1 and "" or "s") .. " ago"
+	end
+	if d < 86400 then
+		local hrs = math.floor(d / 3600)
+		return hrs .. " hour" .. (hrs == 1 and "" or "s") .. " ago"
+	end
+	local days = math.floor(d / 86400)
+	return days .. " day" .. (days == 1 and "" or "s") .. " ago"
+end
+
+local function RSH_SlotName(index)
+	if index == 1 then return "LAST ROUND" end
+	return index .. " ROUNDS AGO"
+end
+
+-- { section = "TITLE" } or { "label", "value" }
+local function RSH_Rows(s)
+	local rows = {}
+	local function add(label, value) rows[#rows + 1] = { string.upper(label), string.upper(tostring(value)) } end
+	local function section(title) rows[#rows + 1] = { section = string.upper(title) } end
+
+	section("outcome")
+	if s.survived then
+		add("status", "survived")
+	elseif s.killedBy and s.killedBy ~= "" then
+		add("killed by", s.killedBy)
+	else
+		add("status", "died")
+	end
+
+	section("combat")
+	add("kills", s.kills or 0)
+	add("headshots", s.headshots or 0)
+	add("accuracy", RSH_Accuracy(s) .. "%")
+	add("shots fired", s.shotsFired or 0)
+	add("preferred weapon type", s.weaponType or "other")
+	add("damage dealt", math.Round(s.damageDealt or 0))
+	add("damage taken", math.Round(s.damageTaken or 0))
+
+	section("physical")
+	add("kicks", s.kicks or 0)
+	add("buttstock shoves", s.buttstockShoves or 0)
+	add("pushes", s.pushes or 0)
+	if s.mapHasWindows then add("windows broken", s.windowsBroken or 0) end
+	add("consumables consumed", s.consumablesConsumed or 0)
+
+	section("karma")
+	add("karma earned", math.Round(s.karmaEarned or 0, 1))
+	add("karma lost", math.Round(s.karmaLost or 0, 1))
+	return rows
+end
+
+local function RSH_PaintBackdrop(pnl, w, h)
+	-- inside the ESC menu the menu's own background layer is already behind us
+	if IsValid(MainMenu) and IsValid(MainMenu.BackgroundLayer) then return end
+	if hg.PaintMenuBackground then
+		hg.PaintMenuBackground(w, h, 1)
+	else
+		surface.SetDrawColor(rsh_dark)
+		surface.DrawRect(0, 0, w, h)
+	end
+end
+
+local function RSH_Button(parent, label, onClick, isEnabled)
+	local btn = vgui.Create("DButton", parent)
+	btn:SetText("")
+	btn.HoverLerp = 0
+	function btn:Think()
+		local on = not isEnabled or isEnabled()
+		self:SetCursor(on and "hand" or "arrow")
+		self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, (on and self:IsHovered()) and 1 or 0)
+	end
+	function btn:Paint(w, h)
+		local on = not isEnabled or isEnabled()
+		local hov = on and self:IsHovered()
+		local hl = self.HoverLerp or 0
+		draw.RoundedBox(3, 0, 0, w, h, hov and rsh_panel_hi or rsh_btn)
+		surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, on and (45 + 100 * hl) or 20)
+		surface.DrawOutlinedRect(0, 0, w, h, 1)
+		if hl > 0.01 then
+			surface.SetDrawColor(rsh_accent.r, rsh_accent.g, rsh_accent.b, 210 * hl)
+			surface.DrawRect(0, 0, RSH_Unit(3), h)
+		end
+		local c = not on and Color(80, 80, 80) or (hov and rsh_text or rsh_text_idle)
+		draw.SimpleText(label, "ZCity_RSH_Tiny", w / 2, h / 2, c, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	end
+	function btn:DoClick()
+		if isEnabled and not isEnabled() then return end
+		surface.PlaySound(RSH_CLICK)
+		onClick()
+	end
+	return btn
+end
+
+local function RSH_ReturnToMenu(ParentPanel)
+	if not IsValid(ParentPanel) then return end
+	local luaMenu = ParentPanel:GetParent()
+	ParentPanel:AlphaTo(0, 0.2, 0, function()
+		if IsValid(ParentPanel) then ParentPanel:Remove() end
+	end)
+	if not IsValid(luaMenu) then return end
+	for _, child in ipairs(luaMenu:GetChildren()) do
+		if child ~= ParentPanel then
+			child:SetVisible(true)
+			child:AlphaTo(255, 0.2, 0)
+		end
+	end
+	if luaMenu.panelparrent then
+		luaMenu.panelparrent = vgui.Create("DPanel", luaMenu)
+		luaMenu.panelparrent:SetPos(0, 0)
+		luaMenu.panelparrent:SetSize(ScrW(), ScrH())
+		luaMenu.panelparrent:MoveToFront()
+		luaMenu.panelparrent:SetMouseInputEnabled(false)
+		luaMenu.panelparrent.Paint = function() end
+	end
+	if luaMenu.ResetCurrentPanel then luaMenu:ResetCurrentPanel() end
+end
+
+local function RSH_PaintCard(pnl, w, h)
+	surface.SetDrawColor(rsh_panel)
+	surface.DrawRect(0, 0, w, h)
+	surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 50)
+	surface.DrawOutlinedRect(0, 0, w, h, 1)
+
+	local s = pnl.Entry
+	local pad = RSH_Unit(18)
+
+	if not s then
+		draw.SimpleText(pnl.EmptyText or "NO ROUND", "ZCity_RSH_Tiny", w / 2, h / 2, rsh_text_dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		return
+	end
+
+	-- grade box (top right)
+	local box = RSH_Unit(116)
+	local bx, by = w - pad - box, pad
+	local gc = RSH_GradeColors[s.grade or "C"] or rsh_text
+	draw.RoundedBox(3, bx, by, box, box, rsh_btn)
+	surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 145)
+	surface.DrawOutlinedRect(bx, by, box, box, 1)
+	surface.SetDrawColor(gc.r, gc.g, gc.b, 210)
+	surface.DrawRect(bx, by, RSH_Unit(3), box)
+	draw.SimpleText(s.grade or "?", "ZCity_RSH_Grade", bx + box / 2, by + box * 0.44, gc, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	draw.SimpleText("GRADE", "ZCity_RSH_Tiny", bx + box / 2, by + box - RSH_Unit(16), rsh_text_dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+
+	-- round info (top left)
+	local mode = (s.mode and s.mode ~= "") and string.upper(s.mode) or "UNKNOWN MODE"
+	draw.SimpleText(mode, "ZCity_RSH_Small", pad, pad, rsh_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+	local infoY = pad + RSH_Unit(30)
+	draw.SimpleText(string.upper(string.NiceName(s.map or "")), "ZCity_RSH_Tiny", pad, infoY, rsh_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+	draw.SimpleText(string.upper(RSH_AgoText(s.time)), "ZCity_RSH_Tiny", pad, infoY + RSH_Unit(20), rsh_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+	if s.winner and s.winner ~= "" then
+		draw.SimpleText("WINNER: " .. string.upper(s.winner), "ZCity_RSH_Tiny", pad, infoY + RSH_Unit(40), rsh_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+	end
+
+	-- stat rows, laid out like the appearance editor's list rows
+	local rows = pnl.Rows or {}
+	local startY = by + box + RSH_Unit(16)
+	local avail = h - startY - pad
+	local rowH = math.min(RSH_Unit(30), avail / math.max(1, #rows))
+	local y = startY
+	surface.SetFont("ZCity_RSH_Tiny")
+	for _, row in ipairs(rows) do
+		if row.section then
+			local cy = y + rowH * 0.6
+			draw.SimpleText(row.section, "ZCity_RSH_Tiny", pad, cy, rsh_label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			local tw = surface.GetTextSize(row.section)
+			surface.SetDrawColor(255, 255, 255, 24)
+			surface.DrawLine(pad + tw + RSH_Unit(7), math.floor(cy), w - pad, math.floor(cy))
+		else
+			local rh = rowH - RSH_Unit(2)
+			surface.SetDrawColor(rsh_btn)
+			surface.DrawRect(pad, y, w - pad * 2, rh)
+			surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 30)
+			surface.DrawOutlinedRect(pad, y, w - pad * 2, rh, 1)
+			draw.SimpleText(row[1], "ZCity_RSH_Stat", pad + RSH_Unit(10), y + rh / 2, rsh_text_idle, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(row[2], "ZCity_RSH_Stat", w - pad - RSH_Unit(10), y + rh / 2, rsh_white, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+		end
+		y = y + rowH
+	end
+end
+
+function hg.DrawRoundStats(ParentPanel)
+	if not IsValid(ParentPanel) then return end
+	RSH_Load()
+
+	if IsValid(hg.RoundStatsPanel) then hg.RoundStatsPanel:Remove() end
+
+	ParentPanel:SetAlpha(0)
+	ParentPanel.Paint = RSH_PaintBackdrop
+	ParentPanel:AlphaTo(255, 0.15, 0)
+
+	local root = vgui.Create("DPanel", ParentPanel)
+	root:SetSize(ScrW(), ScrH())
+	root:SetPos(0, 0)
+	root.Paint = function() end
+	hg.RoundStatsPanel = root
+
+	-- page index: right card shows history[page], left card shows history[page + 1]
+	local page = 1
+
+	local header = vgui.Create("DPanel", root)
+	header:Dock(TOP)
+	header:SetTall(RSH_Unit(64))
+	header.Paint = function(self, w, h)
+		surface.SetDrawColor(rsh_panel)
+		surface.DrawRect(0, 0, w, h)
+		surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 50)
+		surface.DrawRect(0, h - 1, w, 1)
+		draw.SimpleText("ROUND STATS", "ZCity_RSH_Title", RSH_Unit(25), h / 2, rsh_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		local n = #(hg.RoundStatsHistory or {})
+		draw.SimpleText("LAST " .. RSH_MAX .. " ROUNDS  /  NEWEST FIRST  /  " .. n .. " SAVED", "ZCity_RSH_Tiny", w - RSH_Unit(25), h / 2, rsh_text_dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+	end
+
+	local footer = vgui.Create("DPanel", root)
+	footer:Dock(BOTTOM)
+	footer:SetTall(RSH_Unit(56))
+	footer.Paint = function(self, w, h)
+		surface.SetDrawColor(rsh_panel)
+		surface.DrawRect(0, 0, w, h)
+		surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 50)
+		surface.DrawRect(0, 0, w, 1)
+	end
+
+	local returnBtn = RSH_Button(footer, "<- RETURN", function() RSH_ReturnToMenu(ParentPanel) end)
+	footer.PerformLayout = function(self, w, h)
+		local pad = RSH_Unit(10)
+		returnBtn:SetPos(pad, pad)
+		returnBtn:SetSize(RSH_Unit(180), h - pad * 2)
+	end
+
+	local content = vgui.Create("DPanel", root)
+	content:Dock(FILL)
+	content:DockMargin(RSH_Unit(22), RSH_Unit(18), RSH_Unit(22), RSH_Unit(14))
+	content.Paint = function() end
+
+	local function Count() return #(hg.RoundStatsHistory or {}) end
+	local function CanBack() return page + 1 < Count() end
+	local function CanForward() return page > 1 end
+
+	local leftCard, rightCard, leftLabel, rightLabel
+	local switching = false
+
+	local function Fill()
+		local hist = hg.RoundStatsHistory or {}
+		local newer, older = hist[page], hist[page + 1]
+		rightCard.Entry = newer
+		rightCard.Rows = newer and RSH_Rows(newer) or nil
+		rightCard.EmptyText = "PLAY A ROUND TO SEE YOUR STATS HERE"
+		leftCard.Entry = older
+		leftCard.Rows = older and RSH_Rows(older) or nil
+		leftCard.EmptyText = newer and "NO EARLIER ROUND SAVED" or ""
+		rightLabel.Text = newer and ("STATS FROM " .. RSH_SlotName(page)) or "NO ROUNDS YET"
+		leftLabel.Text = older and ("STATS FROM " .. RSH_SlotName(page + 1)) or "-"
+	end
+
+	local function Flip(delta)
+		if switching then return end
+		local target = math.Clamp(page + delta, 1, math.max(1, Count() - 1))
+		if target == page then return end
+		switching = true
+		for _, c in ipairs({ leftCard, rightCard }) do c:AlphaTo(0, 0.1, 0) end
+		timer.Simple(0.1, function()
+			if not IsValid(root) then return end
+			page = target
+			Fill()
+			for _, c in ipairs({ leftCard, rightCard }) do c:AlphaTo(255, 0.12, 0) end
+			switching = false
+		end)
+	end
+
+	local backBtn = RSH_Button(content, "< BACK", function() Flip(1) end, CanBack)
+	local fwdBtn = RSH_Button(content, "FORWARD >", function() Flip(-1) end, CanForward)
+
+	local function MakeLabel()
+		local lbl = vgui.Create("DPanel", content)
+		lbl.Text = ""
+		lbl.Paint = function(self, w, h)
+			draw.RoundedBox(3, 0, 0, w, h, rsh_btn)
+			surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 45)
+			surface.DrawOutlinedRect(0, 0, w, h, 1)
+			draw.SimpleText(self.Text, "ZCity_RSH_Tiny", w / 2, h / 2, rsh_text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		end
+		return lbl
+	end
+
+	leftLabel = MakeLabel()
+	rightLabel = MakeLabel()
+
+	leftCard = vgui.Create("DPanel", content)
+	leftCard.Paint = RSH_PaintCard
+	rightCard = vgui.Create("DPanel", content)
+	rightCard.Paint = RSH_PaintCard
+
+	-- page dots between the two labels
+	local dots = vgui.Create("DPanel", content)
+	dots.Paint = function(self, w, h)
+		local n = Count()
+		if n <= 0 then return end
+		local size = RSH_Unit(6)
+		local gap = RSH_Unit(8)
+		local total = n * size + (n - 1) * gap
+		local x = (w - total) / 2
+		for i = n, 1, -1 do
+			local shown = (i == page or i == page + 1)
+			draw.RoundedBox(2, x, (h - size) / 2, size, size, shown and Color(175, 175, 175) or Color(85, 85, 85))
+			x = x + size + gap
+		end
+	end
+
+	content.PerformLayout = function(pnl, w, h)
+		local barH = RSH_Unit(34)
+		local gap = RSH_Unit(18)
+		local btnW = RSH_Unit(120)
+		local half = math.floor((w - gap) / 2)
+		local dotsW = RSH_Unit(6) * RSH_MAX + RSH_Unit(8) * (RSH_MAX - 1)
+
+		backBtn:SetPos(0, 0)
+		backBtn:SetSize(btnW, barH)
+		leftLabel:SetPos(btnW + RSH_Unit(10), 0)
+		leftLabel:SetSize(half - btnW - RSH_Unit(10) - dotsW / 2 - RSH_Unit(6), barH)
+
+		dots:SetSize(dotsW + gap, barH)
+		dots:SetPos(math.floor((w - dotsW - gap) / 2), 0)
+
+		local rx = half + gap
+		rightLabel:SetPos(rx + dotsW / 2 + RSH_Unit(6), 0)
+		rightLabel:SetSize(w - rx - btnW - RSH_Unit(10) - dotsW / 2 - RSH_Unit(6), barH)
+		fwdBtn:SetPos(w - btnW, 0)
+		fwdBtn:SetSize(btnW, barH)
+
+		local cardY = barH + RSH_Unit(12)
+		leftCard:SetPos(0, cardY)
+		leftCard:SetSize(half, h - cardY)
+		rightCard:SetPos(rx, cardY)
+		rightCard:SetSize(w - rx, h - cardY)
+	end
+
+	function root:Refresh()
+		page = math.Clamp(page, 1, math.max(1, Count() - 1))
+		Fill()
+	end
+
+	-- mouse wheel flips too
+	root.OnMouseWheeled = function(self, delta)
+		Flip(delta > 0 and 1 or -1)
+		return true
+	end
+
+	Fill()
+end
+
 
 net.Receive("rem_roundsummary", function()
 	local count = net.ReadUInt(4)
@@ -1549,17 +2400,37 @@ net.Receive("rem_roundsummary", function()
 		karmaEarned = net.ReadFloat(),
 		karmaLost = net.ReadFloat(),
 	}
+	local participated = net.ReadBool()
+	stats.survived = net.ReadBool()
+	stats.damageDealt = net.ReadUInt(16)
+	stats.damageTaken = net.ReadUInt(16)
+	local modeName = net.ReadString()
+	local traitors = {}
+	for i = 1, net.ReadUInt(4) do
+		local tp = net.ReadEntity()
+		local tmodel = net.ReadString()
+		local tname = net.ReadString()
+		local tspec = net.ReadBool()
+		local tapp = net.ReadTable()
+		local tclass = net.ReadString()
+		local tmain = net.ReadBool()
+		local talive = net.ReadBool()
+		traitors[i] = { ply = tp, model = tmodel, name = tname, spec = tspec, appearance = tapp, playerclass = tclass, main = tmain, alive = talive }
+	end
+	if participated and hg.RecordRoundStats then
+		hg.RecordRoundStats(stats, { mode = modeName, winner = winnerTeam, mapHasWindows = mapHasWindows })
+	end
 	for _, data in ipairs(featured) do
 		data.stats = stats
 		data.mapHasWindows = mapHasWindows
 	end
 
-	if count == 0 then return end
+	if count == 0 and #traitors == 0 then return end
 	if IsRTVActive() then return end
 
 	timer.Create("rem_roundsummary_show", SUMMARY_CLEAR_DELAY, 1, function()
 		if IsRTVActive() then return end
-		ShowSummary(featured, winnerTeam)
+		ShowSummary(featured, winnerTeam, traitors)
 	end)
 end)
 

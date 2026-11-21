@@ -635,31 +635,9 @@ if CLIENT then
 		return 0
 	end
 	
-	hook.Add("radialOptions", "equipment", function()
-		local armors = LocalPlayer().armors or {}
-		local inventory = LocalPlayer():GetNetVar("Inventory",{})
-		inventory["Weapons"] = inventory["Weapons"] or {}
-		local organism = LocalPlayer().organism or {}
-	
-		local tbl = table.Copy(armors)
-		if inventory["Weapons"]["hg_flashlight"] then
-			tbl["hg_flashlight"] = inventory["Weapons"]["hg_flashlight"]
-		end
-
-		if inventory["Weapons"]["hg_sling"] then
-			tbl["hg_sling"] = inventory["Weapons"]["hg_sling"]
-		end
-
-		if inventory["Weapons"]["hg_brassknuckles"] then
-			tbl["hg_brassknuckles"] = inventory["Weapons"]["hg_brassknuckles"]
-		end
-	
-		if not organism.otrub and table.Count(tbl) > 0 then
-			hg.radialOptions = hg.radialOptions or {}
-			local newEntry = {equipmentMenu, "Drop Equipment"}
-			hg.radialOptions[#hg.radialOptions + 1] = newEntry
-		end
-	end)
+	-- "Drop Equipment" is now part of the merged Inventory menu (systems/ammunition/cl_ammo_menu.lua)
+	-- also clear it out of an already-running session (lua refresh keeps old hooks around)
+	hook.Remove("radialOptions", "equipment")
 	
 	
 	concommand.Add("hg_add_equipment", function(ply, cmd, args)
@@ -908,7 +886,11 @@ if CLIENT then
 
 	concommand.Add("hg_get_equipment", function(ply, cmd, args)
 		if ply == LocalPlayer() then
-			CreateMenu()
+			if hg.OpenInventoryMenu then
+				hg.OpenInventoryMenu()
+			else
+				CreateMenu()
+			end
 		end
 	end)
 

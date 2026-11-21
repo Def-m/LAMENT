@@ -586,6 +586,16 @@ function SettingsRefreshContent()
     if not IsValid(settings_content_panel) then return end
     settings_content_panel:Clear()
 
+    if settings_active_category == "Keybinds" then
+        if IsValid(settings_header_label) then
+            settings_header_label:SetText("KEYBINDS")
+        end
+        if hg.FillKeybinds then
+            hg.FillKeybinds(settings_content_panel)
+        end
+        return
+    end
+
     if not settings_active_category or not hg.settings.tbl[settings_active_category] then
         return
     end
@@ -833,6 +843,7 @@ function hg.DrawSettings(ParentPanel)
         end
         allowedCategories[categoryName] = true
     end
+    allowedCategories["Keybinds"] = true
 
     if not settings_active_category or not allowedCategories[settings_active_category] then
         for categoryName, _ in pairs(allowedCategories) do
@@ -909,6 +920,7 @@ function hg.DrawSettings(ParentPanel)
         end
         SettingsCreateCategoryButton(sidebar, categoryName, categoryName)
     end
+    SettingsCreateCategoryButton(sidebar, "Keybinds", "Keybinds")
 
     local backBtn = vgui.Create("DLabel", sidebar)
     backBtn:Dock(BOTTOM)
@@ -1235,6 +1247,54 @@ function KeybindsRefreshContent()
 			binder2:SetPos(w - MenuUnit(140), MenuUnit(20))
         end
     end
+end
+
+-- Keybinds as a category inside the settings page
+function hg.FillKeybinds(panel)
+    if not IsValid(panel) then return end
+    settings_sw, settings_sh = ScrW(), ScrH()
+
+    local bar = vgui.Create("DPanel", panel)
+    bar:Dock(TOP)
+    bar:SetTall(MenuUnit(48))
+    bar:DockMargin(MenuUnit(10), MenuUnit(8), MenuUnit(10), 0)
+    bar.Paint = function() end
+
+    local hint = vgui.Create("DLabel", bar)
+    hint:Dock(FILL)
+    hint:SetFont("ZCity_Menu_Settings_Tiny")
+    hint:SetTextColor(settings_color_text_dim)
+    hint:SetText("Console binds still work; these are alternatives.")
+    hint:SetContentAlignment(4)
+
+    local resetBtn = vgui.Create("DButton", bar)
+    resetBtn:Dock(RIGHT)
+    resetBtn:DockMargin(0, MenuUnit(10), 0, MenuUnit(10))
+    resetBtn:SetWide(MenuUnit(140))
+    resetBtn:SetText("")
+    resetBtn.Paint = function(self, w, h)
+        surface.SetDrawColor(20, 20, 20, 240)
+        surface.DrawRect(0, 0, w, h)
+        surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, self:IsHovered() and 210 or 120)
+        surface.DrawOutlinedRect(0, 0, w, h, 1)
+        draw.SimpleText("Reset defaults", "ZCity_Menu_Settings_Tiny", w / 2, h / 2, settings_color_text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+
+    local list = vgui.Create("DPanel", panel)
+    list:Dock(FILL)
+    list.Paint = function() end
+
+    keybinds_content_panel = list
+    keybinds_header_label = nil
+
+    resetBtn.DoClick = function()
+        surface.PlaySound(SOUND_SETTINGS_CLICK)
+        KeybindsResetDefaults()
+        keybinds_content_panel = list
+        KeybindsRefreshContent()
+    end
+
+    KeybindsRefreshContent()
 end
 
 function hg.DrawKeybinds(ParentPanel)

@@ -327,6 +327,18 @@ local function ApplyHeroLoadout(ply)
 			continue
 		end
 
+		-- handcuffs always come with their key
+		if weaponId == "weapon_handcuffs" then
+			ply:Give("weapon_handcuffs")
+			ply:Give("weapon_handcuffs_key")
+			continue
+		end
+
+		if weaponId == "weapon_handcuffs_key" then
+			ply:Give("weapon_handcuffs_key")
+			continue
+		end
+
 		if string.StartWith(weaponId, "ent_armor_") then
 			if hg and hg.AddArmor then
 				hg.AddArmor(ply, weaponId)

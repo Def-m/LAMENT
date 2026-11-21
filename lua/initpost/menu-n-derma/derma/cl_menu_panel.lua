@@ -143,32 +143,85 @@ hook.Add("OnScreenSizeChanged", "ZCity_MainMenu_Fonts", CreateMainMenuFonts)
 CreateMainMenuFonts()
 
 local Selects = {
-    {Title = "Disconnect", BypassTransition = true, Func = function(luaMenu) luaMenu:PlayDisconnectCutscene() end},
-    {Title = "Main Menu", Func = function(luaMenu) gui.ActivateGameUI() luaMenu:Close() end},
-    {Title = "Loadout",
-    GamemodeOnly = true,
-    Func = function(luaMenu,pp) 
+    resume = {Title = "RESUME", BypassTransition = true, Func = function(luaMenu) luaMenu:Close() end},
+    disconnect = {Title = "DISCONNECT", BypassTransition = true, Func = function(luaMenu) luaMenu:PlayDisconnectCutscene() end},
+    loadout = {Title = "loadout", GamemodeOnly = true, Func = function(luaMenu, pp)
         if hg.DrawLoadoutMenu then
             hg.DrawLoadoutMenu(pp)
         end
     end},
-    {Title = "Achievements", Func = function(luaMenu,pp) 
+    roundstats = {Title = "round stats", Func = function(luaMenu, pp)
+        if hg.DrawRoundStats then
+            hg.DrawRoundStats(pp)
+        end
+    end},
+    achievements = {Title = "achievements", Func = function(luaMenu, pp)
         hg.DrawAchievmentsMenu(pp)
     end},
-    {Title = "Information", Func = function(luaMenu,pp)
+    menu = {Title = "menu", BypassTransition = true, Func = function(luaMenu)
+        gui.ActivateGameUI()
+        luaMenu:Close()
+    end},
+    information = {Title = "information", Func = function(luaMenu, pp)
         hg.DrawInformation(pp)
     end},
-    {Title = "Keybinds", Func = function(luaMenu,pp)
-        hg.DrawKeybinds(pp)
-    end},
-    {Title = "Settings", Func = function(luaMenu,pp) 
-        hg.DrawSettings(pp)
-    end},
-    {Title = "Appearance", Func = function(luaMenu,pp)
+    appearance = {Title = "appearance", KeepPreview = true, PreviewOnTop = true, Func = function(luaMenu, pp)
         hg.CreateApperanceMenu(pp)
     end},
-    {Title = "Return", Func = function(luaMenu) luaMenu:Close() end},
+    -- keybinds now live inside settings as their own category
+    settings = {Title = "settings", Func = function(luaMenu, pp)
+        hg.DrawSettings(pp)
+    end},
 }
+
+local menu_bar_title = "Lament"
+local menu_bar_logo = Material("lament/logo.png", "smooth")
+local menu_bar_top_buttons = {"information", "appearance", "settings"}
+local menu_bar_big_buttons = {"resume", "disconnect"}
+local menu_bar_small_buttons = {"loadout", "roundstats", "achievements", "menu"}
+
+local function CreateMenuBarFonts()
+    local scale = math.min(ScrW(), ScrH()) / 1000
+    surface.CreateFont("ZCity_MenuBar_Name", {font = "IBM Plex Mono", size = math.max(14, math.floor(24 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_MenuBar_XP", {font = "IBM Plex Mono", size = math.max(12, math.floor(17 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_MenuBar_Title", {font = "IBM Plex Mono", size = math.max(18, math.floor(38 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_MenuBar_Button", {font = "IBM Plex Mono", size = math.max(14, math.floor(22 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_MenuBar_ButtonBig", {font = "IBM Plex Mono", size = math.max(18, math.floor(36 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_MenuBar_Tiny", {font = "IBM Plex Mono", size = math.max(11, math.floor(14 * scale)), weight = 400, antialias = true})
+end
+
+hook.Add("OnScreenSizeChanged", "ZCity_MenuBar_Fonts", CreateMenuBarFonts)
+CreateMenuBarFonts()
+
+local menu_bg_dark = Color(8, 8, 8, 255)
+local menu_bg_grad_r = surface.GetTextureID("vgui/gradient-r")
+local menu_bg_grad_l = surface.GetTextureID("vgui/gradient-l")
+
+-- Same backdrop the appearance editor uses (dark base, slow noise tiles, soft gradients)
+function hg.PaintMenuBackground(w, h, mul)
+    mul = mul or 1
+    if mul <= 0 then return end
+    surface.SetDrawColor(menu_bg_dark.r, menu_bg_dark.g, menu_bg_dark.b, 255 * mul)
+    surface.DrawRect(0, 0, w, h)
+    local t = RealTime()
+    for i = 0, h, 64 do
+        for j = 0, w, 64 do
+            local n = math.sin(j * 12.9898 + i * 78.233 + t * 0.008) * 43758.5453
+            n = n - math.floor(n)
+            local v = 80 + n * 30
+            surface.SetDrawColor(v, v, v, (1 + n * 3) * mul)
+            surface.DrawRect(j, i, 64, 64)
+        end
+    end
+    surface.SetDrawColor(0, 0, 0, 100 * mul)
+    surface.DrawRect(0, 0, w, h)
+    surface.SetDrawColor(80, 80, 80, 15 * mul)
+    surface.SetTexture(menu_bg_grad_r)
+    surface.DrawTexturedRect(0, 0, w, h)
+    surface.SetDrawColor(20, 20, 20, 80 * mul)
+    surface.SetTexture(menu_bg_grad_l)
+    surface.DrawTexturedRect(0, 0, w, h)
+end
 
 local splasheh = {
     'LIKE HOMICIDED',
@@ -440,6 +493,7 @@ end
 
 function PANEL:Think()
     UpdateMainMenuMusic(self)
+    self:UpdatePreviewLayer()
 
     if self.DisconnectBlackStart then
         local blackFrac = math.Clamp((CurTime() - self.DisconnectBlackStart) / math.max(disconnect_cutscene.black_fade_time, 0.001), 0, 1)
@@ -652,7 +706,8 @@ function PANEL:CreateAppearancePreview()
     local targetX = ScrW() - holderW - MenuUnit(appearance_preview.right)
     local targetY = MenuUnit(appearance_preview.top)
 
-    self.previewHolder = vgui.Create("DPanel", self)
+    -- separate layer: sits under the menu popup, above the background layer
+    self.previewHolder = vgui.Create("DPanel")
     local holder = self.previewHolder
     holder:SetSize(holderW, holderH)
     holder:SetPos(targetX, ScrH())
@@ -698,6 +753,11 @@ function PANEL:CreateAppearancePreview()
 
     local oldPaint = preview.Paint
     preview.Paint = function(pnl, w, h)
+        -- the appearance editor wants the model kept inside its preview box
+        if pnl.ClipToBounds then
+            oldPaint(pnl, w, h)
+            return
+        end
         DisableClipping(true)
         oldPaint(pnl, w, h)
         DisableClipping(false)
@@ -915,106 +975,17 @@ function PANEL:Init()
         end
     end)
 
-    self.lDock = vgui.Create("DPanel", self)
-    local lDock = self.lDock
-    lDock:Dock(LEFT)
-    lDock:SetSize(ScrW() / 3, ScrH())
-    lDock:DockMargin(0, MenuUnit(90), MenuUnit(10), MenuUnit(90))
-    self.lDockBaseMargins = {0, MenuUnit(90), MenuUnit(10), MenuUnit(90)}
-    lDock.Paint = function(this, w, h)
-        if hg.PluvTown.Active then
-            surface.SetDrawColor(color_white)
-            surface.SetMaterial(self.SelectedPluv or Pluv)
-            surface.DrawTexturedRect(0, MenuUnit(27), MenuUnit(35), MenuUnit(27))
-        end
-    end
-
+    self:CreateBackgroundLayer()
     self:CreateAppearancePreview()
-    self:CreateProfileInfo()
-    self:CreateTopPlayersTicker()
 
     self.Buttons = {}
-    for k, v in ipairs(Selects) do
-        if v.GamemodeOnly and not isfunction(hg.DrawLoadoutMenu) then continue end
-        self:AddSelect(lDock, v.Title, v)
-    end
-
-    local logoPanel = vgui.Create("DPanel", lDock)
-    local logoAspect = math.max(1, LogoistMat:Height()) / math.max(1, LogoistMat:Width())
-    self.logoPanel = logoPanel
-    logoPanel:Dock(BOTTOM)
-    logoPanel:SetTall(1)
-    logoPanel:SetMouseInputEnabled(true)
-    logoPanel:DockMargin(0, 0, 0, MenuUnit(menu_title.spacing))
-    self.logoBaseMargin = MenuUnit(menu_title.spacing)
-    logoPanel.Think = function(this)
-        local maxW = math.max(1, this:GetWide() - MenuUnit(12))
-        local drawW = math.min(MenuUnit(menu_title.width), maxW)
-        local drawH = drawW * logoAspect
-        this:SetTall(math.ceil(drawH * (1 + menu_live.title_hover_scale) + MenuUnit(8)))
-    end
-    logoPanel.Paint = function(this, w, h)
-        local driftX, driftY = self:GetLiveOffset(MenuUnit(menu_live.logo_drift_x), MenuUnit(menu_live.logo_drift_y))
-        local shakeX, shakeY = self:GetLiveShake(6.4, 7.2, MenuUnit(menu_live.shake_x), MenuUnit(menu_live.shake_y))
-        local scale = 1 + (self.LogoHoverLerp or 0) * menu_live.title_hover_scale
-        local maxW = math.max(1, w - MenuUnit(12))
-        local baseW = math.min(MenuUnit(menu_title.width), maxW)
-        local baseH = baseW * logoAspect
-        local drawW = baseW * scale
-        local drawH = baseH * scale
-        local maxX = math.max(0, w - drawW)
-        local maxY = math.max(0, h - drawH)
-        local drawX = math.Clamp(MenuUnit(menu_title.offset_x) + driftX + shakeX, 0, maxX)
-        local drawY = math.Clamp((h - drawH) * 0.5 + driftY + shakeY, 0, maxY)
-        surface.SetDrawColor(255, 255, 255, 255)
-        surface.SetMaterial(LogoistMat)
-        surface.DrawTexturedRect(drawX, drawY, drawW, drawH)
-    end
-
-
-    local bottomDock = vgui.Create("DPanel", self)
-    self.bottomDock = bottomDock
-    bottomDock:SetPos(ScreenScale(1), ScrH() - ScrH()/10)
-    bottomDock:SetSize(ScreenScale(190), ScreenScaleH(40))
-    self.bottomDockBasePos = {ScreenScale(1), ScrH() - ScrH()/10}
-    bottomDock.Paint = function(this, w, h) end
+    self:CreateTopBar()
+    self:CreateBottomBar()
     self.panelparrent = vgui.Create("DPanel", self)
     self.panelparrent:SetPos(0, 0)
     self.panelparrent:SetSize(ScrW(), ScrH())
     self.panelparrent:MoveToBack()
     self.panelparrent.Paint = function(this, w, h) end
-    
-    local git = vgui.Create("DLabel", bottomDock)
-    git:Dock(BOTTOM)
-    git:DockMargin(ScreenScale(10), 0, 0, 0)
-    git:SetFont("ZCity_Menu_Tiny")
-    git:SetTextColor(clr_gray)
-    git:SetText("GitHub: github.com/" .. hg.GitHub_ReposOwner .. "/" .. hg.GitHub_ReposName)
-    git:SetContentAlignment(4)
-    git:SetMouseInputEnabled(true)
-    git:SizeToContents()
-
-    function git:DoClick()
-        gui.OpenURL("https://github.com/" .. hg.GitHub_ReposOwner .. "/" .. hg.GitHub_ReposName)
-    end
-
-    local version = vgui.Create("DLabel", bottomDock)
-    version:Dock(BOTTOM)
-    version:DockMargin(ScreenScale(10), 0, 0, 0)
-    version:SetFont("ZCity_Menu_Tiny")
-    version:SetTextColor(clr_gray)
-    version:SetText(hg.Version)
-    version:SetContentAlignment(4)
-    version:SizeToContents()
-
-    local zteam = vgui.Create("DLabel", bottomDock)
-    zteam:Dock(BOTTOM)
-    zteam:DockMargin(ScreenScale(10), 0, 0, 0)
-    zteam:SetFont("ZCity_Menu_Tiny")
-    zteam:SetTextColor(clr_gray)
-    zteam:SetText("EARLY-ACCESS")
-    zteam:SetContentAlignment(4)
-    zteam:SizeToContents()
 end
 
 function PANEL:First( ply )
@@ -1028,24 +999,52 @@ local menu_gradient_right = Color(18,18,18,65)
 
 local clr_1 = Color(100,100,100,35)
 function PANEL:Paint(w,h)
-    local backgroundAlpha = math.Clamp(self.DisconnectBackgroundAlpha or 255, 0, 255)
-    if backgroundAlpha > 0 then
-        local bgMul = backgroundAlpha / 255
-        draw.RoundedBox(0, 0, 0, w, h, Color(self.ColorBG.r, self.ColorBG.g, self.ColorBG.b, (self.ColorBG.a or 255) * bgMul))
-        hg.DrawBlur(self, 5)
-        surface.SetDrawColor(menu_gradient_right.r, menu_gradient_right.g, menu_gradient_right.b, menu_gradient_right.a * bgMul)
-        surface.SetTexture(gradient_r)
-        surface.DrawTexturedRect(0,0,w,h)
-        surface.SetDrawColor(self.ColorBG.r, self.ColorBG.g, self.ColorBG.b, (self.ColorBG.a or 255) * bgMul)
-        surface.SetTexture(gradient_l)
-        surface.DrawTexturedRect(0,0,w,h)
-        surface.SetDrawColor(clr_1.r, clr_1.g, clr_1.b, clr_1.a * bgMul)
-        surface.SetTexture(gradient_d)
-        surface.DrawTexturedRect(0,0,w,h)
-    end
+    -- the backdrop lives on self.BackgroundLayer (below the playermodel layer)
     if (self.DisconnectBlackAlpha or 0) > 0 then
         surface.SetDrawColor(0, 0, 0, self.DisconnectBlackAlpha)
         surface.DrawRect(0, 0, w, h)
+    end
+end
+
+function PANEL:CreateBackgroundLayer()
+    local menu = self
+    local layer = vgui.Create("DPanel")
+    self.BackgroundLayer = layer
+    layer:SetPos(0, 0)
+    layer:SetSize(ScrW(), ScrH())
+    layer:SetMouseInputEnabled(false)
+    layer:SetKeyboardInputEnabled(false)
+    layer.Paint = function(this, w, h)
+        if not IsValid(menu) then return end
+        local mul = (menu:GetAlpha() / 255) * (math.Clamp(menu.DisconnectBackgroundAlpha or 255, 0, 255) / 255)
+        hg.PaintMenuBackground(w, h, mul)
+    end
+end
+
+function PANEL:IsPageOpen()
+    return IsValid(self.panelparrent) and #self.panelparrent:GetChildren() > 0
+end
+
+-- keeps the playermodel layer hidden behind pages that cover it
+function PANEL:UpdatePreviewLayer()
+    local holder = self.previewHolder
+    if not IsValid(holder) or self.DisconnectCutscene or self.MenuClosing then return end
+    local sel = curent_panel and Selects[curent_panel]
+    local pageOpen = self:IsPageOpen()
+    local want = not pageOpen or (sel and sel.KeepPreview) or false
+    if want ~= holder:IsVisible() then
+        holder:SetVisible(want)
+        if want then holder:SetAlpha(255) end
+    end
+
+    -- the appearance editor needs the model drawn over its page; everywhere else
+    -- the model sits on its own layer underneath the menu
+    local onTop = pageOpen and sel and sel.PreviewOnTop or false
+    if onTop and holder:GetParent() ~= self then
+        holder:SetParent(self)
+        holder:MoveToFront()
+    elseif not onTop and holder:GetParent() == self then
+        holder:SetParent(vgui.GetWorldPanel())
     end
 end
 
@@ -1104,142 +1103,253 @@ end
 
 function PANEL:ResetCurrentPanel()
     curent_panel = nil
+    if IsValid(self.previewHolder) and not self.DisconnectCutscene then
+        self.previewHolder:SetVisible(true)
+        self.previewHolder:SetAlpha(255)
+    end
 end
 
-function PANEL:AddSelect( pParent, strTitle, tbl )
-    local id = #self.Buttons + 1
-    self.Buttons[id] = vgui.Create( "DLabel", pParent )
-    local btn = self.Buttons[id]
-    btn:SetText( string.rep("#", #(curent_panel == string.lower(strTitle) and strTitle ~= 'Traitor Role' and '[ '..strTitle..' ]' or strTitle)) )
-    btn:SetMouseInputEnabled( true )
-    btn:SizeToContents()
-    btn:SetFont( "ZCity_Menu_Small" )
-    btn:SetTall( MenuUnit(42) )
-    btn:Dock(BOTTOM)
-    btn:DockMargin(MenuUnit(15),MenuUnit(2),0,0)
-    btn.Func = tbl.Func
-    btn.HoveredFunc = tbl.HoveredFunc
-    local luaMenu = self 
-    if tbl.CreatedFunc then tbl.CreatedFunc(btn, self, luaMenu) end
-    btn.RColor = Color(225,225,225)
-    btn.OpenTime = CurTime()
-    btn.LineLerp = 0
-    btn.HoverLerp = 0
-    btn.HoverOffset = 0.5
-    function btn:DoClick()
-        if luaMenu.DisconnectCutscene then return end
-        if luaMenu.SwitchingPanel then return end
-        surface.PlaySound(SOUND_MENU_SELECT)
+-- palette borrowed from the appearance editor
+local menu_bar_bg = Color(28, 28, 28, 180)
+local menu_bar_border = Color(180, 180, 180)
+local menu_bar_btn_bg = Color(31, 31, 31, 205)
+local menu_bar_btn_hover = Color(48, 48, 48, 235)
+local menu_bar_accent = Color(225, 225, 225)
+local menu_bar_text = Color(220, 220, 220)
+local menu_bar_text_idle = Color(188, 188, 188)
+local menu_bar_text_dim = Color(140, 140, 140)
 
-        if tbl.BypassTransition then
-            btn.Func(luaMenu)
-            return
-        end
+function PANEL:RunSelect(key)
+    local tbl = Selects[key]
+    if not tbl then return end
+    if self.DisconnectCutscene or self.SwitchingPanel then return end
+    surface.PlaySound(SOUND_MENU_SELECT)
 
-        for _, child in ipairs(luaMenu:GetChildren()) do
-            if child ~= luaMenu.panelparrent and not (strTitle == "Appearance" and child == luaMenu.previewHolder) then
-                child:SetAlpha(0)
-                child:SetVisible(false)
-            end
-        end
-
-        luaMenu.SwitchingPanel = true
-        if IsValid(luaMenu.panelparrent) then
-            luaMenu.panelparrent:Remove()
-        end
-        luaMenu.panelparrent = vgui.Create("DPanel", luaMenu)
-        luaMenu.panelparrent:SetPos(0, 0)
-        luaMenu.panelparrent:SetSize(ScrW(), ScrH())
-        luaMenu.panelparrent:MoveToFront()
-        luaMenu.panelparrent.Paint = function(this, w, h) end
-        btn.Func(luaMenu,luaMenu.panelparrent)
-        curent_panel = string.lower(strTitle)
-        luaMenu.SwitchingPanel = false
+    if tbl.BypassTransition then
+        tbl.Func(self)
+        return
     end
+
+    for _, child in ipairs(self:GetChildren()) do
+        if child ~= self.panelparrent then
+            child:SetAlpha(0)
+            child:SetVisible(false)
+        end
+    end
+    if IsValid(self.previewHolder) and not tbl.KeepPreview then
+        self.previewHolder:SetVisible(false)
+    end
+
+    self.SwitchingPanel = true
+    if IsValid(self.panelparrent) then
+        self.panelparrent:Remove()
+    end
+    self.panelparrent = vgui.Create("DPanel", self)
+    self.panelparrent:SetPos(0, 0)
+    self.panelparrent:SetSize(ScrW(), ScrH())
+    self.panelparrent:MoveToFront()
+    self.panelparrent.Paint = function(this, w, h) end
+    tbl.Func(self, self.panelparrent)
+    curent_panel = key
+    self.SwitchingPanel = false
+end
+
+function PANEL:MakeMenuButton(parent, key, big)
+    local tbl = Selects[key]
+    if not tbl then return end
+    if tbl.GamemodeOnly and not isfunction(hg.DrawLoadoutMenu) then return end
+
+    local luaMenu = self
+    local btn = vgui.Create("DButton", parent)
+    btn:SetText("")
+    btn.Label = tbl.Title
+    btn.Font = big and "ZCity_MenuBar_ButtonBig" or "ZCity_MenuBar_Button"
+    btn.HoverLerp = 0
+    btn.OpenTime = CurTime()
 
     function btn:Think()
-        local isHovered = self:IsHovered() or (IsValid(self:GetChild(0)) and self:GetChild(0):IsHovered()) or (IsValid(self:GetChild(0)) and IsValid(self:GetChild(0):GetChild(0)) and self:GetChild(0):GetChild(0):IsHovered())
-        if isHovered and not self.WasHovered then
+        local hovered = self:IsHovered()
+        if hovered and not self.WasHovered then
             surface.PlaySound(SOUND_MENU_HOVER)
         end
-        self.WasHovered = isHovered
-
-        self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, isHovered and 1 or 0)
-        self.LineLerp = LerpFT(0.2, self.LineLerp or 0, isHovered and 1 or 0)
-        local mouseX, mouseY = luaMenu:GetLiveOffset(MenuUnit(menu_live.button_drift_x), MenuUnit(menu_live.button_drift_y))
-        local shakeX, shakeY = luaMenu:GetLiveShake(id * 0.91, id * 1.27, MenuUnit(menu_live.button_shake_x), MenuUnit(menu_live.button_shake_y))
-        self:DockMargin(
-            math.Round(MenuUnit(15) + mouseX * 0.3 + shakeX + self.HoverLerp * (self.HoverOffset or MenuUnit(2))),
-            math.Round(MenuUnit(2) + mouseY * 0.1 + shakeY),
-            0,
-            0
-        )
-
-        local elapsed = CurTime() - self.OpenTime
-        local charsToShow = math.floor(elapsed * 15)
-        local targetText = (curent_panel == string.lower(strTitle) and strTitle ~= 'Traitor Role') and '[ '..strTitle..' ]' or strTitle
-        local len = #targetText
-
-        if charsToShow > len then charsToShow = len end
-        if self.TypewriterTarget ~= targetText then
-            self.TypewriterTarget = targetText
-            self.LastTypewriterChars = 0
+        self.WasHovered = hovered
+        -- Think stops while hidden behind a page; replay the reveal when we come back
+        if self.LastThink and RealTime() - self.LastThink > 0.25 then
+            self.OpenTime = CurTime()
         end
-        if charsToShow > 0 and charsToShow > (self.LastTypewriterChars or 0) then
-            PlayTypewriterSound()
-        end
-        self.LastTypewriterChars = charsToShow
+        self.LastThink = RealTime()
+        self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, hovered and 1 or 0)
+    end
 
-        local ntxt = ""
-        for i = 1, len do
-            if i <= charsToShow then
-                ntxt = ntxt .. targetText:sub(i, i)
-            else
-                ntxt = ntxt .. "#"
+
+    function btn:Paint(w, h)
+        local hl = self.HoverLerp or 0
+        local hovered = self:IsHovered()
+        draw.RoundedBox(3, 0, 0, w, h, hovered and menu_bar_btn_hover or menu_bar_btn_bg)
+        surface.SetDrawColor(menu_bar_border.r, menu_bar_border.g, menu_bar_border.b, 45 + 100 * hl)
+        surface.DrawOutlinedRect(0, 0, w, h, 1)
+
+        -- accent strip on the left, like the editor's active rows
+        if hl > 0.01 then
+            surface.SetDrawColor(menu_bar_accent.r, menu_bar_accent.g, menu_bar_accent.b, 210 * hl)
+            surface.DrawRect(0, 0, MenuUnit(3), h)
+        end
+
+        local text = self.Label
+        local chars = math.min(#text, math.floor((CurTime() - (self.OpenTime or 0)) * 22))
+        local shown = text:sub(1, chars) .. string.rep("#", #text - chars)
+        draw.SimpleText(shown, self.Font, w / 2, h / 2, hovered and menu_bar_text or menu_bar_text_idle, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+
+    function btn:DoClick()
+        luaMenu:RunSelect(key)
+    end
+
+    self.Buttons[#self.Buttons + 1] = btn
+    return btn
+end
+
+function PANEL:CreateTopBar()
+    local luaMenu = self
+    local barH = MenuUnit(64)
+    local bar = vgui.Create("DPanel", self)
+    self.topBar = bar
+    bar:SetSize(ScrW(), barH)
+    bar:SetPos(0, -barH)
+    bar:MoveTo(0, 0, 0.35, 0, 0.3)
+
+    bar.Band, bar.Medal = nil, nil
+    bar.NextAwards = 0
+
+    bar.Paint = function(this, w, h)
+        surface.SetDrawColor(menu_bar_bg)
+        surface.DrawRect(0, 0, w, h)
+        surface.SetDrawColor(menu_bar_border.r, menu_bar_border.g, menu_bar_border.b, 50)
+        surface.DrawRect(0, h - 1, w, 1)
+
+        local nameText, xpText, ply = luaMenu:GetProfileInfo()
+        if this.NextAwards <= CurTime() then
+            this.NextAwards = CurTime() + 1
+            if IsValid(ply) and ply.GetAwards then
+                this.Band, this.Medal = ply:GetAwards()
             end
+            this.Band = this.Band or menu_profile_fallback_band
+            this.Medal = this.Medal or menu_profile_fallback_medal
         end
 
-        if self:GetText() ~= ntxt then
-            self:SetText(ntxt)
-            self:SizeToContents()
+        local pad = MenuUnit(14)
+        draw.SimpleText(nameText, "ZCity_MenuBar_Name", pad, h * 0.32, menu_bar_text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+
+        local icon = MenuUnit(22)
+        local iconY = h * 0.72 - icon / 2
+        if this.Band and this.Band.icon then
+            surface.SetMaterial(this.Band.icon)
+            surface.SetDrawColor(255, 255, 255, 255)
+            surface.DrawTexturedRect(pad, iconY, icon, icon)
+        end
+        if this.Medal and this.Medal.icon then
+            surface.SetMaterial(this.Medal.icon)
+            surface.SetDrawColor(255, 255, 255, 255)
+            surface.DrawTexturedRect(pad, iconY, icon, icon)
+        end
+        draw.SimpleText("xp: " .. string.gsub(xpText, " XP$", ""), "ZCity_MenuBar_XP", pad + icon + MenuUnit(6), h * 0.72, menu_bar_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+
+        -- logo in the middle; falls back to the title text if the image is missing
+        if not menu_bar_logo:IsError() then
+            -- logo is a bit taller than the bar on purpose; it hangs just below it
+            local lh = MenuUnit(76)
+            local lw = lh * (menu_bar_logo:Width() / math.max(1, menu_bar_logo:Height()))
+            DisableClipping(true)
+            surface.SetMaterial(menu_bar_logo)
+            surface.SetDrawColor(255, 255, 255, 255)
+            surface.DrawTexturedRect(math.floor(w / 2 - lw / 2), -MenuUnit(4), lw, lh)
+            DisableClipping(false)
+        else
+            draw.SimpleText(string.upper(menu_bar_title), "ZCity_MenuBar_Title", w / 2, h / 2, menu_bar_accent, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
     end
 
-    function btn:Paint(w, h)
-        local isHovered = self:IsHovered() or (IsValid(self:GetChild(0)) and self:GetChild(0):IsHovered()) or (IsValid(self:GetChild(0)) and IsValid(self:GetChild(0):GetChild(0)) and self:GetChild(0):GetChild(0):IsHovered())
-        local flash = isHovered and (0.5 + 0.5 * math.sin(CurTime() * 10)) or 0
-        
-        local textColor = self.RColor
-        local outlineColor = Color(0, 0, 0, 255)
+    local buttons = {}
+    for _, key in ipairs(menu_bar_top_buttons) do
+        local btn = self:MakeMenuButton(bar, key, false)
+        if btn then buttons[#buttons + 1] = btn end
+    end
 
-        if isHovered then
-            local v = flash * 255
-            textColor = Color(v, v, v, 255)
-            local inv = 255 - v
-            outlineColor = Color(inv, inv, inv, 255)
+    bar.PerformLayout = function(this, w, h)
+        local pad = MenuUnit(6)
+        local gap = MenuUnit(10)
+        local btnW = MenuUnit(160)
+        local btnH = math.min(h - pad * 2, MenuUnit(52))
+        local btnY = math.floor((h - btnH) / 2)
+        local x = w - pad
+        for i = #buttons, 1, -1 do
+            x = x - btnW
+            buttons[i]:SetPos(x, btnY)
+            buttons[i]:SetSize(btnW, btnH)
+            x = x - gap
         end
+    end
+end
 
-        surface.SetFont(self:GetFont())
-        local tw, th = surface.GetTextSize(self:GetText())
-        local scale = 1 + (self.HoverLerp or 0) * menu_live.button_hover_scale
-        local matrix = Matrix()
-        matrix:Translate(Vector(0, h * (1 - scale) * 0.5, 0))
-        matrix:Scale(Vector(scale, scale, 1))
-        cam.PushModelMatrix(matrix)
-        draw.SimpleTextOutlined(self:GetText(), self:GetFont(), 0, h / 2, textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER, 1, outlineColor)
+function PANEL:CreateBottomBar()
+    local barH = MenuUnit(150)
+    local bar = vgui.Create("DPanel", self)
+    self.bottomBar = bar
+    bar:SetSize(ScrW(), barH)
+    bar:SetPos(0, ScrH())
+    bar:MoveTo(0, ScrH() - barH, 0.35, 0, 0.3)
 
-        if self.LineLerp and self.LineLerp > 0.01 then
-            surface.SetDrawColor(255, 255, 255, 255 * self.LineLerp)
-            surface.DrawRect(0, h / 2 + th / 2, tw * self.LineLerp, math.max(1, MenuUnit(1)))
+    bar.Paint = function(this, w, h)
+        surface.SetDrawColor(menu_bar_bg)
+        surface.DrawRect(0, 0, w, h)
+        surface.SetDrawColor(menu_bar_border.r, menu_bar_border.g, menu_bar_border.b, 50)
+        surface.DrawRect(0, 0, w, 1)
+    end
+
+    local big, small = {}, {}
+    for _, key in ipairs(menu_bar_big_buttons) do
+        local btn = self:MakeMenuButton(bar, key, true)
+        if btn then big[#big + 1] = btn end
+    end
+    for _, key in ipairs(menu_bar_small_buttons) do
+        local btn = self:MakeMenuButton(bar, key, false)
+        if btn then small[#small + 1] = btn end
+    end
+
+    local function LayoutRow(row, y, rowH, w, pad, gap)
+        local n = #row
+        if n == 0 then return end
+        local btnW = (w - pad * 2 - gap * (n - 1)) / n
+        for i, btn in ipairs(row) do
+            btn:SetPos(math.floor(pad + (i - 1) * (btnW + gap)), y)
+            btn:SetSize(math.floor(btnW), rowH)
         end
-        cam.PopModelMatrix()
-        return true
+    end
+
+    bar.PerformLayout = function(this, w, h)
+        local pad = MenuUnit(10)
+        local gap = MenuUnit(14)
+        local rowGap = MenuUnit(10)
+        local rowH = math.floor((h - pad * 2 - rowGap) / 2)
+        LayoutRow(big, pad, rowH, w, pad, gap)
+        LayoutRow(small, pad + rowH + rowGap, rowH, w, pad, gap)
     end
 end
 
 function PANEL:Close()
     if self.DisconnectCutscene then return end
+    self.MenuClosing = true
     StopMainMenuMusic()
+
+    -- reverse of the open animation: top bar back up, bottom bar back down
+    if IsValid(self.topBar) then
+        self.topBar:Stop()
+        self.topBar:MoveTo(0, -self.topBar:GetTall(), 0.35, 0, 0.3)
+    end
+    if IsValid(self.bottomBar) then
+        self.bottomBar:Stop()
+        self.bottomBar:MoveTo(0, ScrH(), 0.35, 0, 0.3)
+    end
     if IsValid(self.previewModel) and IsValid(self.previewModel.Entity) then
         CleanupPreviewAccessories(self.previewModel.Entity)
     end
@@ -1259,6 +1369,8 @@ end
 
 function PANEL:OnRemove()
     StopMainMenuMusic()
+    if IsValid(self.previewHolder) then self.previewHolder:Remove() end
+    if IsValid(self.BackgroundLayer) then self.BackgroundLayer:Remove() end
 end
 
 function PANEL:SetMenuMusic(path)

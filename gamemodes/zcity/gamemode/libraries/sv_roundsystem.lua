@@ -21,7 +21,6 @@ local ZB_FORCED_MODE_POOL = {
         ["standard"] = true,
         ["soe"] = true,
         ["improvision"] = true,
-	["suicidelunatic"] = true,
 	["active_shooter"] = true,
 	["dm"] = true,
 	["tdm"] = true,
@@ -29,7 +28,6 @@ local ZB_FORCED_MODE_POOL = {
 	["juggernaut"] = true,
 	["criresp"] = true,
 	["gwars"] = true,
-	["realish"] = true
 }
 local ZB_NO_BACK_TO_BACK_MODES = {
 	["dm"] = true,
@@ -210,6 +208,7 @@ function zb:EndRound(skipPresentation)
 	net.Broadcast()
 
 	--PrintMessage(HUD_PRINTTALK, "Раунд закончен.")
+	hook.Run("ZB_PreEndRound")
 	CurrentRound():EndRound()
 	hook.Run("HG_RoundFinished")
 	if not zb.SKIP_END_PRESENTATION then
