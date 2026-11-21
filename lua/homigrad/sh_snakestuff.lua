@@ -313,11 +313,9 @@ if CLIENT then
 		--hook.Remove("HUDPaint","debildebilich",zmeyka_lmao)
 	end)
 
-	hook.Add("radialOptions","zmeyka_test",function()
-		if not zmeyka:GetBool() then return end
-
-		if not snakes[lply:UserID()] then startZmeyka(lply:UserID()) end
-	end)
+	-- snakes removed from the Q (radial) menu
+	hook.Remove("radialOptions","zmeyka_test")
+	hook.Remove("HUDPaint","debildebilich")
 
 	hook.Add("RadialMenuPressed","zmeyka_test",function()
 		snakes = {}

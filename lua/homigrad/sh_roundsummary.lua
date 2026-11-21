@@ -153,6 +153,7 @@ if SERVER then
 			ply.RSStats.karmaStart = karma
 			ply.RSStats.karmaLast = karma
 			ply.RSStats.karmaCurrent = karma
+			ply.RSStats.participated = ply:Team() ~= TEAM_SPECTATOR and ply:Alive()
 			ply.RSLastHit = nil
 		end
 	end
@@ -712,6 +713,15 @@ if SERVER then
 		net.WriteFloat(tonumber(s.karmaCurrent or ply.Karma or 100) or 100)
 		net.WriteFloat(tonumber(s.karmaEarned or 0) or 0)
 		net.WriteFloat(tonumber(s.karmaLost or 0) or 0)
+
+		-- round stats history extras
+		local participated = s.participated or (s.kills or 0) > 0 or (s.shotsFired or 0) > 0 or (s.damageDealt or 0) > 0 or (s.damageTaken or 0) > 0
+		local mode = CurrentRound and CurrentRound()
+		net.WriteBool(participated and true or false)
+		net.WriteBool(s.survived ~= false)
+		net.WriteUInt(math.Clamp(math.Round(s.damageDealt or 0), 0, 65535), 16)
+		net.WriteUInt(math.Clamp(math.Round(s.damageTaken or 0), 0, 65535), 16)
+		net.WriteString(istable(mode) and tostring(mode.PrintName or mode.name or "") or "")
 	end
 
 	hook.Add("ZB_EndRound", "rem_roundsummary_send", function()
@@ -1512,6 +1522,472 @@ local function ShowSummary(featured, winnerTeam)
 	end)
 end
 
+-- ============================================================
+-- Round stats history (last 5 rounds) + ESC menu page
+-- ============================================================
+
+local RSH_MAX = 5
+local RSH_FILE = "zcity_roundstats_history.json"
+
+hg.RoundStatsHistory = hg.RoundStatsHistory or nil
+
+local function RSH_Load()
+	if hg.RoundStatsHistory then return hg.RoundStatsHistory end
+	local raw = file.Read(RSH_FILE, "DATA")
+	local tbl = raw and util.JSONToTable(raw) or nil
+	hg.RoundStatsHistory = istable(tbl) and tbl or {}
+	return hg.RoundStatsHistory
+end
+
+local function RSH_Save()
+	file.Write(RSH_FILE, util.TableToJSON(hg.RoundStatsHistory or {}, false))
+end
+
+local function RSH_Accuracy(s)
+	if (s.shotsFired or 0) <= 0 then return 0 end
+	return math.Clamp(math.floor(((s.shotsHit or 0) / s.shotsFired) * 100), 0, 100)
+end
+
+-- Rough performance score -> letter grade
+local function RSH_Grade(s)
+	local score = 0
+	score = score + (s.kills or 0) * 20
+	score = score + math.min(s.headshots or 0, 10) * 4
+	score = score + math.min((s.damageDealt or 0) * 0.15, 40)
+	if (s.shotsFired or 0) >= 3 then
+		score = score + RSH_Accuracy(s) * 0.25
+	end
+	if s.survived then score = score + 35 end
+	score = score + math.min((s.karmaEarned or 0) * 0.5, 10)
+	score = score - (s.karmaLost or 0) * 1.5
+
+	if score >= 100 then return "S"
+	elseif score >= 75 then return "A"
+	elseif score >= 55 then return "B"
+	elseif score >= 35 then return "C"
+	elseif score >= 15 then return "D"
+	end
+	return "F"
+end
+
+local RSH_GradeColors = {
+	S = Color(232, 190, 70),
+	A = Color(110, 200, 95),
+	B = Color(80, 160, 220),
+	C = Color(225, 225, 225),
+	D = Color(220, 140, 60),
+	F = Color(200, 55, 55),
+}
+
+function hg.RecordRoundStats(stats, extra)
+	local history = RSH_Load()
+	local entry = table.Copy(stats)
+	entry.mode = extra.mode or ""
+	entry.map = game.GetMap()
+	entry.time = os.time()
+	entry.winner = extra.winner or ""
+	entry.mapHasWindows = extra.mapHasWindows and true or false
+	entry.grade = RSH_Grade(entry)
+
+	table.insert(history, 1, entry)
+	while #history > RSH_MAX do
+		table.remove(history)
+	end
+	RSH_Save()
+
+	if IsValid(hg.RoundStatsPanel) and hg.RoundStatsPanel.Refresh then
+		hg.RoundStatsPanel:Refresh()
+	end
+end
+
+local function RSH_CreateFonts()
+	local scale = math.min(ScrW(), ScrH()) / 1000
+	local mono = "IBM Plex Mono"
+	surface.CreateFont("ZCity_RSH_Title", { font = mono, size = math.max(16, math.floor(32 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_RSH_Small", { font = mono, size = math.max(14, math.floor(22 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_RSH_Tiny", { font = mono, size = math.max(12, math.floor(16 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_RSH_Stat", { font = mono, size = math.max(12, math.floor(18 * scale)), weight = 400, antialias = true })
+	surface.CreateFont("ZCity_RSH_Grade", { font = mono, size = math.max(30, math.floor(76 * scale)), weight = 600, antialias = true })
+end
+hook.Add("OnScreenSizeChanged", "ZCity_RSH_Fonts", RSH_CreateFonts)
+RSH_CreateFonts()
+
+local function RSH_Unit(num)
+	return math.floor(num * math.min(ScrW(), ScrH()) / 1000)
+end
+
+-- palette borrowed from the appearance editor
+local rsh_white = Color(240, 240, 240, 240)
+local rsh_text = Color(220, 220, 220)
+local rsh_text_idle = Color(188, 188, 188)
+local rsh_text_dim = Color(140, 140, 140)
+local rsh_label = Color(132, 132, 132)
+local rsh_accent = Color(225, 225, 225)
+local rsh_panel = Color(28, 28, 28, 180)
+local rsh_panel_hi = Color(48, 48, 48, 235)
+local rsh_btn = Color(31, 31, 31, 205)
+local rsh_border = Color(180, 180, 180)
+local rsh_dark = Color(8, 8, 8, 255)
+local RSH_CLICK = "ui/rem_click.wav"
+
+local function RSH_AgoText(t)
+	if not t then return "" end
+	local d = math.max(0, os.time() - t)
+	if d < 60 then return "just now" end
+	if d < 3600 then
+		local m = math.floor(d / 60)
+		return m .. " minute" .. (m == 1 and "" or "s") .. " ago"
+	end
+	if d < 86400 then
+		local hrs = math.floor(d / 3600)
+		return hrs .. " hour" .. (hrs == 1 and "" or "s") .. " ago"
+	end
+	local days = math.floor(d / 86400)
+	return days .. " day" .. (days == 1 and "" or "s") .. " ago"
+end
+
+local function RSH_SlotName(index)
+	if index == 1 then return "LAST ROUND" end
+	return index .. " ROUNDS AGO"
+end
+
+-- { section = "TITLE" } or { "label", "value" }
+local function RSH_Rows(s)
+	local rows = {}
+	local function add(label, value) rows[#rows + 1] = { string.upper(label), string.upper(tostring(value)) } end
+	local function section(title) rows[#rows + 1] = { section = string.upper(title) } end
+
+	section("outcome")
+	if s.survived then
+		add("status", "survived")
+	elseif s.killedBy and s.killedBy ~= "" then
+		add("killed by", s.killedBy)
+	else
+		add("status", "died")
+	end
+
+	section("combat")
+	add("kills", s.kills or 0)
+	add("headshots", s.headshots or 0)
+	add("accuracy", RSH_Accuracy(s) .. "%")
+	add("shots fired", s.shotsFired or 0)
+	add("preferred weapon type", s.weaponType or "other")
+	add("damage dealt", math.Round(s.damageDealt or 0))
+	add("damage taken", math.Round(s.damageTaken or 0))
+
+	section("physical")
+	add("kicks", s.kicks or 0)
+	add("buttstock shoves", s.buttstockShoves or 0)
+	add("pushes", s.pushes or 0)
+	if s.mapHasWindows then add("windows broken", s.windowsBroken or 0) end
+	add("consumables consumed", s.consumablesConsumed or 0)
+
+	section("karma")
+	add("karma earned", math.Round(s.karmaEarned or 0, 1))
+	add("karma lost", math.Round(s.karmaLost or 0, 1))
+	return rows
+end
+
+local function RSH_PaintBackdrop(pnl, w, h)
+	-- inside the ESC menu the menu's own background layer is already behind us
+	if IsValid(MainMenu) and IsValid(MainMenu.BackgroundLayer) then return end
+	if hg.PaintMenuBackground then
+		hg.PaintMenuBackground(w, h, 1)
+	else
+		surface.SetDrawColor(rsh_dark)
+		surface.DrawRect(0, 0, w, h)
+	end
+end
+
+local function RSH_Button(parent, label, onClick, isEnabled)
+	local btn = vgui.Create("DButton", parent)
+	btn:SetText("")
+	btn.HoverLerp = 0
+	function btn:Think()
+		local on = not isEnabled or isEnabled()
+		self:SetCursor(on and "hand" or "arrow")
+		self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, (on and self:IsHovered()) and 1 or 0)
+	end
+	function btn:Paint(w, h)
+		local on = not isEnabled or isEnabled()
+		local hov = on and self:IsHovered()
+		local hl = self.HoverLerp or 0
+		draw.RoundedBox(3, 0, 0, w, h, hov and rsh_panel_hi or rsh_btn)
+		surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, on and (45 + 100 * hl) or 20)
+		surface.DrawOutlinedRect(0, 0, w, h, 1)
+		if hl > 0.01 then
+			surface.SetDrawColor(rsh_accent.r, rsh_accent.g, rsh_accent.b, 210 * hl)
+			surface.DrawRect(0, 0, RSH_Unit(3), h)
+		end
+		local c = not on and Color(80, 80, 80) or (hov and rsh_text or rsh_text_idle)
+		draw.SimpleText(label, "ZCity_RSH_Tiny", w / 2, h / 2, c, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	end
+	function btn:DoClick()
+		if isEnabled and not isEnabled() then return end
+		surface.PlaySound(RSH_CLICK)
+		onClick()
+	end
+	return btn
+end
+
+local function RSH_ReturnToMenu(ParentPanel)
+	if not IsValid(ParentPanel) then return end
+	local luaMenu = ParentPanel:GetParent()
+	ParentPanel:AlphaTo(0, 0.2, 0, function()
+		if IsValid(ParentPanel) then ParentPanel:Remove() end
+	end)
+	if not IsValid(luaMenu) then return end
+	for _, child in ipairs(luaMenu:GetChildren()) do
+		if child ~= ParentPanel then
+			child:SetVisible(true)
+			child:AlphaTo(255, 0.2, 0)
+		end
+	end
+	if luaMenu.panelparrent then
+		luaMenu.panelparrent = vgui.Create("DPanel", luaMenu)
+		luaMenu.panelparrent:SetPos(0, 0)
+		luaMenu.panelparrent:SetSize(ScrW(), ScrH())
+		luaMenu.panelparrent:MoveToFront()
+		luaMenu.panelparrent:SetMouseInputEnabled(false)
+		luaMenu.panelparrent.Paint = function() end
+	end
+	if luaMenu.ResetCurrentPanel then luaMenu:ResetCurrentPanel() end
+end
+
+local function RSH_PaintCard(pnl, w, h)
+	surface.SetDrawColor(rsh_panel)
+	surface.DrawRect(0, 0, w, h)
+	surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 50)
+	surface.DrawOutlinedRect(0, 0, w, h, 1)
+
+	local s = pnl.Entry
+	local pad = RSH_Unit(18)
+
+	if not s then
+		draw.SimpleText(pnl.EmptyText or "NO ROUND", "ZCity_RSH_Tiny", w / 2, h / 2, rsh_text_dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		return
+	end
+
+	-- grade box (top right)
+	local box = RSH_Unit(116)
+	local bx, by = w - pad - box, pad
+	local gc = RSH_GradeColors[s.grade or "C"] or rsh_text
+	draw.RoundedBox(3, bx, by, box, box, rsh_btn)
+	surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 145)
+	surface.DrawOutlinedRect(bx, by, box, box, 1)
+	surface.SetDrawColor(gc.r, gc.g, gc.b, 210)
+	surface.DrawRect(bx, by, RSH_Unit(3), box)
+	draw.SimpleText(s.grade or "?", "ZCity_RSH_Grade", bx + box / 2, by + box * 0.44, gc, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	draw.SimpleText("GRADE", "ZCity_RSH_Tiny", bx + box / 2, by + box - RSH_Unit(16), rsh_text_dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+
+	-- round info (top left)
+	local mode = (s.mode and s.mode ~= "") and string.upper(s.mode) or "UNKNOWN MODE"
+	draw.SimpleText(mode, "ZCity_RSH_Small", pad, pad, rsh_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+	local infoY = pad + RSH_Unit(30)
+	draw.SimpleText(string.upper(string.NiceName(s.map or "")), "ZCity_RSH_Tiny", pad, infoY, rsh_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+	draw.SimpleText(string.upper(RSH_AgoText(s.time)), "ZCity_RSH_Tiny", pad, infoY + RSH_Unit(20), rsh_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+	if s.winner and s.winner ~= "" then
+		draw.SimpleText("WINNER: " .. string.upper(s.winner), "ZCity_RSH_Tiny", pad, infoY + RSH_Unit(40), rsh_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+	end
+
+	-- stat rows, laid out like the appearance editor's list rows
+	local rows = pnl.Rows or {}
+	local startY = by + box + RSH_Unit(16)
+	local avail = h - startY - pad
+	local rowH = math.min(RSH_Unit(30), avail / math.max(1, #rows))
+	local y = startY
+	surface.SetFont("ZCity_RSH_Tiny")
+	for _, row in ipairs(rows) do
+		if row.section then
+			local cy = y + rowH * 0.6
+			draw.SimpleText(row.section, "ZCity_RSH_Tiny", pad, cy, rsh_label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			local tw = surface.GetTextSize(row.section)
+			surface.SetDrawColor(255, 255, 255, 24)
+			surface.DrawLine(pad + tw + RSH_Unit(7), math.floor(cy), w - pad, math.floor(cy))
+		else
+			local rh = rowH - RSH_Unit(2)
+			surface.SetDrawColor(rsh_btn)
+			surface.DrawRect(pad, y, w - pad * 2, rh)
+			surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 30)
+			surface.DrawOutlinedRect(pad, y, w - pad * 2, rh, 1)
+			draw.SimpleText(row[1], "ZCity_RSH_Stat", pad + RSH_Unit(10), y + rh / 2, rsh_text_idle, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(row[2], "ZCity_RSH_Stat", w - pad - RSH_Unit(10), y + rh / 2, rsh_white, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+		end
+		y = y + rowH
+	end
+end
+
+function hg.DrawRoundStats(ParentPanel)
+	if not IsValid(ParentPanel) then return end
+	RSH_Load()
+
+	if IsValid(hg.RoundStatsPanel) then hg.RoundStatsPanel:Remove() end
+
+	ParentPanel:SetAlpha(0)
+	ParentPanel.Paint = RSH_PaintBackdrop
+	ParentPanel:AlphaTo(255, 0.15, 0)
+
+	local root = vgui.Create("DPanel", ParentPanel)
+	root:SetSize(ScrW(), ScrH())
+	root:SetPos(0, 0)
+	root.Paint = function() end
+	hg.RoundStatsPanel = root
+
+	-- page index: right card shows history[page], left card shows history[page + 1]
+	local page = 1
+
+	local header = vgui.Create("DPanel", root)
+	header:Dock(TOP)
+	header:SetTall(RSH_Unit(64))
+	header.Paint = function(self, w, h)
+		surface.SetDrawColor(rsh_panel)
+		surface.DrawRect(0, 0, w, h)
+		surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 50)
+		surface.DrawRect(0, h - 1, w, 1)
+		draw.SimpleText("ROUND STATS", "ZCity_RSH_Title", RSH_Unit(25), h / 2, rsh_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		local n = #(hg.RoundStatsHistory or {})
+		draw.SimpleText("LAST " .. RSH_MAX .. " ROUNDS  /  NEWEST FIRST  /  " .. n .. " SAVED", "ZCity_RSH_Tiny", w - RSH_Unit(25), h / 2, rsh_text_dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+	end
+
+	local footer = vgui.Create("DPanel", root)
+	footer:Dock(BOTTOM)
+	footer:SetTall(RSH_Unit(56))
+	footer.Paint = function(self, w, h)
+		surface.SetDrawColor(rsh_panel)
+		surface.DrawRect(0, 0, w, h)
+		surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 50)
+		surface.DrawRect(0, 0, w, 1)
+	end
+
+	local returnBtn = RSH_Button(footer, "<- RETURN", function() RSH_ReturnToMenu(ParentPanel) end)
+	footer.PerformLayout = function(self, w, h)
+		local pad = RSH_Unit(10)
+		returnBtn:SetPos(pad, pad)
+		returnBtn:SetSize(RSH_Unit(180), h - pad * 2)
+	end
+
+	local content = vgui.Create("DPanel", root)
+	content:Dock(FILL)
+	content:DockMargin(RSH_Unit(22), RSH_Unit(18), RSH_Unit(22), RSH_Unit(14))
+	content.Paint = function() end
+
+	local function Count() return #(hg.RoundStatsHistory or {}) end
+	local function CanBack() return page + 1 < Count() end
+	local function CanForward() return page > 1 end
+
+	local leftCard, rightCard, leftLabel, rightLabel
+	local switching = false
+
+	local function Fill()
+		local hist = hg.RoundStatsHistory or {}
+		local newer, older = hist[page], hist[page + 1]
+		rightCard.Entry = newer
+		rightCard.Rows = newer and RSH_Rows(newer) or nil
+		rightCard.EmptyText = "PLAY A ROUND TO SEE YOUR STATS HERE"
+		leftCard.Entry = older
+		leftCard.Rows = older and RSH_Rows(older) or nil
+		leftCard.EmptyText = newer and "NO EARLIER ROUND SAVED" or ""
+		rightLabel.Text = newer and ("STATS FROM " .. RSH_SlotName(page)) or "NO ROUNDS YET"
+		leftLabel.Text = older and ("STATS FROM " .. RSH_SlotName(page + 1)) or "-"
+	end
+
+	local function Flip(delta)
+		if switching then return end
+		local target = math.Clamp(page + delta, 1, math.max(1, Count() - 1))
+		if target == page then return end
+		switching = true
+		for _, c in ipairs({ leftCard, rightCard }) do c:AlphaTo(0, 0.1, 0) end
+		timer.Simple(0.1, function()
+			if not IsValid(root) then return end
+			page = target
+			Fill()
+			for _, c in ipairs({ leftCard, rightCard }) do c:AlphaTo(255, 0.12, 0) end
+			switching = false
+		end)
+	end
+
+	local backBtn = RSH_Button(content, "< BACK", function() Flip(1) end, CanBack)
+	local fwdBtn = RSH_Button(content, "FORWARD >", function() Flip(-1) end, CanForward)
+
+	local function MakeLabel()
+		local lbl = vgui.Create("DPanel", content)
+		lbl.Text = ""
+		lbl.Paint = function(self, w, h)
+			draw.RoundedBox(3, 0, 0, w, h, rsh_btn)
+			surface.SetDrawColor(rsh_border.r, rsh_border.g, rsh_border.b, 45)
+			surface.DrawOutlinedRect(0, 0, w, h, 1)
+			draw.SimpleText(self.Text, "ZCity_RSH_Tiny", w / 2, h / 2, rsh_text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		end
+		return lbl
+	end
+
+	leftLabel = MakeLabel()
+	rightLabel = MakeLabel()
+
+	leftCard = vgui.Create("DPanel", content)
+	leftCard.Paint = RSH_PaintCard
+	rightCard = vgui.Create("DPanel", content)
+	rightCard.Paint = RSH_PaintCard
+
+	-- page dots between the two labels
+	local dots = vgui.Create("DPanel", content)
+	dots.Paint = function(self, w, h)
+		local n = Count()
+		if n <= 0 then return end
+		local size = RSH_Unit(6)
+		local gap = RSH_Unit(8)
+		local total = n * size + (n - 1) * gap
+		local x = (w - total) / 2
+		for i = n, 1, -1 do
+			local shown = (i == page or i == page + 1)
+			draw.RoundedBox(2, x, (h - size) / 2, size, size, shown and Color(175, 175, 175) or Color(85, 85, 85))
+			x = x + size + gap
+		end
+	end
+
+	content.PerformLayout = function(pnl, w, h)
+		local barH = RSH_Unit(34)
+		local gap = RSH_Unit(18)
+		local btnW = RSH_Unit(120)
+		local half = math.floor((w - gap) / 2)
+		local dotsW = RSH_Unit(6) * RSH_MAX + RSH_Unit(8) * (RSH_MAX - 1)
+
+		backBtn:SetPos(0, 0)
+		backBtn:SetSize(btnW, barH)
+		leftLabel:SetPos(btnW + RSH_Unit(10), 0)
+		leftLabel:SetSize(half - btnW - RSH_Unit(10) - dotsW / 2 - RSH_Unit(6), barH)
+
+		dots:SetSize(dotsW + gap, barH)
+		dots:SetPos(math.floor((w - dotsW - gap) / 2), 0)
+
+		local rx = half + gap
+		rightLabel:SetPos(rx + dotsW / 2 + RSH_Unit(6), 0)
+		rightLabel:SetSize(w - rx - btnW - RSH_Unit(10) - dotsW / 2 - RSH_Unit(6), barH)
+		fwdBtn:SetPos(w - btnW, 0)
+		fwdBtn:SetSize(btnW, barH)
+
+		local cardY = barH + RSH_Unit(12)
+		leftCard:SetPos(0, cardY)
+		leftCard:SetSize(half, h - cardY)
+		rightCard:SetPos(rx, cardY)
+		rightCard:SetSize(w - rx, h - cardY)
+	end
+
+	function root:Refresh()
+		page = math.Clamp(page, 1, math.max(1, Count() - 1))
+		Fill()
+	end
+
+	-- mouse wheel flips too
+	root.OnMouseWheeled = function(self, delta)
+		Flip(delta > 0 and 1 or -1)
+		return true
+	end
+
+	Fill()
+end
+
+
 net.Receive("rem_roundsummary", function()
 	local count = net.ReadUInt(4)
 	local featured = {}
@@ -1549,6 +2025,14 @@ net.Receive("rem_roundsummary", function()
 		karmaEarned = net.ReadFloat(),
 		karmaLost = net.ReadFloat(),
 	}
+	local participated = net.ReadBool()
+	stats.survived = net.ReadBool()
+	stats.damageDealt = net.ReadUInt(16)
+	stats.damageTaken = net.ReadUInt(16)
+	local modeName = net.ReadString()
+	if participated and hg.RecordRoundStats then
+		hg.RecordRoundStats(stats, { mode = modeName, winner = winnerTeam, mapHasWindows = mapHasWindows })
+	end
 	for _, data in ipairs(featured) do
 		data.stats = stats
 		data.mapHasWindows = mapHasWindows
