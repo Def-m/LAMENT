@@ -1603,7 +1603,7 @@ local function BuildTraitorFigure(parent, data, x, y, w, h, walkDelay)
 	RS_EnableAutoFit(mp, RS_TRAITOR_POSE)
 
 	local label = vgui.Create("DPanel", fig)
-	label:SetPos(0, h - labelH - math.floor(ScrH() * 0.02))
+	label:SetPos(0, 0)
 	label:SetSize(w, labelH)
 	label:SetAlpha(0)
 	label.Paint = function(self, lw, lh)
@@ -2405,7 +2405,6 @@ net.Receive("rem_roundsummary", function()
 	stats.damageDealt = net.ReadUInt(16)
 	stats.damageTaken = net.ReadUInt(16)
 	local modeName = net.ReadString()
-<<<<<<< HEAD
 	local traitors = {}
 	for i = 1, net.ReadUInt(4) do
 		local tp = net.ReadEntity()
@@ -2418,8 +2417,6 @@ net.Receive("rem_roundsummary", function()
 		local talive = net.ReadBool()
 		traitors[i] = { ply = tp, model = tmodel, name = tname, spec = tspec, appearance = tapp, playerclass = tclass, main = tmain, alive = talive }
 	end
-=======
->>>>>>> 937622b8d87af4e59553b7c8b6fb1091bd5bb24a
 	if participated and hg.RecordRoundStats then
 		hg.RecordRoundStats(stats, { mode = modeName, winner = winnerTeam, mapHasWindows = mapHasWindows })
 	end
