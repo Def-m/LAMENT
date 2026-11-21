@@ -602,6 +602,12 @@ function META2:IsStimulated()
 	return false
 end
 function hg.organism.AddPanicAttack(org, amount, silent)
+	-- panic attacks are disabled
+	if org then
+		org.panicattackadd = 0
+		org.panicattack = 0
+	end
+	do return 0 end
 	if not org then return 0 end
 	if not isnumber(amount) or amount <= 0 then return org.panicattackadd or 0 end
 	if org.lastStand then return org.panicattackadd or 0 end
@@ -904,8 +910,10 @@ hook.Add("Org Think", "Main", function(owner, org, timeValue)
 		org.psycheApathy = 0
 		org.psycheAnger = 0
 	else
-		org.panicattackadd = math.Approach(org.panicattackadd or 0, 0, timeValue / panicattack_add_decay_time)
-		org.panicattack = math.Approach(oldPanicAttack, org.panicattackadd or 0, timeValue / ((org.panicattackadd or 0) > oldPanicAttack and panicattack_rise_time or panicattack_decay_time))
+		-- panic attacks are disabled: always calm
+		org.panicattackadd = 0
+		org.panicattack = 0
+		oldPanicAttack = 0
 	end
 	local oldSeizureBrain = org.lastSeizureBrain or (org.brain or 0)
 	local lobeDamage = getSeizureLobeDamage(org)

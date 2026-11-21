@@ -888,7 +888,7 @@ local POSES = {
 
 -- used by the traitor reveal and the MVP cards: combine idle, whole body in frame
 local RS_REVEAL_POSE = {
-	seqs = { "menu_combine", "idle_all_01", "idle_all_02" },
+	seqs = { "menu_gman", "idle_all_01", "idle_all_02" },
 	ang = Angle(0, 0, 0),
 	cam = Vector(110, 0, 38),
 	target = Vector(0, 0, 38),
@@ -912,6 +912,24 @@ local RS_TRAITOR_FOOT = 0.5 + 37.8 / (RS_TRAITOR_POSE.fitHalfHeight * 2)
 local RS_MVP_POSE = table.Copy(RS_REVEAL_POSE)
 RS_MVP_POSE.target = Vector(0, 0, 35)
 RS_MVP_POSE.fitHalfHeight = 36
+
+-- side figures (side MVPs, non-main traitors): angry idle, body turned away from the
+-- middle figure, head turned back so they still look at the screen.
+-- side: -1 = left of the middle one, 1 = right of it
+local function RS_SidePose(base, side)
+	local pose = table.Copy(base)
+	pose.seqs = { "idle_all_angry", "idle_all_01", "idle_all_02" }
+	local yaw = side * 30 -- positive turns toward the right of the screen
+	pose.ang = Angle(0, yaw, 0)
+	pose.hy = -yaw * 0.9 -- look back toward the camera
+	pose.hp = 0
+	return pose
+end
+
+-- the top MVP stands in the gman idle
+local RS_MVP_MAIN_POSE = table.Copy(RS_MVP_POSE)
+RS_MVP_MAIN_POSE.seqs = { "menu_gman", "idle_all_01", "idle_all_02" }
+RS_MVP_MAIN_POSE.playOnce = true -- play through once, then hold the last frame
 
 local RS_Container
 local RS_Sound
@@ -1210,6 +1228,39 @@ local function SetupModel(mp, ply, model, pose, spec, appearance, playerClassNam
 			self.RSActiveSeq = targetSeq
 		end
 		ent:FrameAdvance(RealFrameTime())
+		-- one-shot animations (cheer) restart so they keep playing
+		if pose.loop and targetSeq == self.RSIdleSeq and ent:GetCycle() >= 0.99 then
+			ent:SetCycle(0)
+		end
+		-- play the idle a single time and freeze on its last frame
+		if pose.playOnce and targetSeq == self.RSIdleSeq then
+			if self.RSOnceDone then
+				ent:SetCycle(0.99)
+			else
+				local cyc = ent:GetCycle()
+				if cyc >= 0.99 or (self.RSOncePrev and cyc < self.RSOncePrev) then
+					self.RSOnceDone = true
+					ent:SetCycle(0.99)
+				else
+					self.RSOncePrev = cyc
+				end
+			end
+		end
+		-- or hand over to a follow-up idle once they finish
+		if pose.afterSeqs and not self.RSAfterDone and targetSeq == self.RSIdleSeq and ent:GetCycle() >= 0.99 then
+			self.RSAfterDone = true
+			local after = -1
+			for _, name in ipairs(pose.afterSeqs) do
+				local sq = ent:LookupSequence(name)
+				if sq and sq >= 0 then after = sq break end
+			end
+			if after >= 0 and after ~= self.RSIdleSeq then
+				self.RSIdleSeq = after
+				self.RSActiveSeq = after
+				ent:ResetSequence(after)
+				ent:SetCycle(0)
+			end
+		end
 		ent:SetPoseParameter("head_yaw", pose.hy)
 		ent:SetPoseParameter("head_pitch", pose.hp)
 		if walkFrac < 1 then
@@ -1285,7 +1336,7 @@ end
 local function BuildCard(parent, data, slot)
 	local sw, sh = ScrW(), ScrH()
 	local big = slot == 1
-	local pose = RS_MVP_POSE
+	local pose = big and RS_MVP_MAIN_POSE or RS_SidePose(RS_MVP_POSE, slot == 2 and -1 or 1)
 
 	local refW, refH = math.min(sw, 1920), math.min(sh, 1080)
 	local scale = math.min(refW / 1920, refH / 1080)
@@ -1569,7 +1620,7 @@ local function RS_PaintLamp(w, h, shadeBottom, floorY, f, seed)
 	end
 end
 
-local function BuildTraitorFigure(parent, data, x, y, w, h, walkDelay)
+local function BuildTraitorFigure(parent, data, x, y, w, h, walkDelay, side)
 	local labelH = math.floor(ScrH() * 0.075)
 	local fig
 
@@ -1599,11 +1650,12 @@ local function BuildTraitorFigure(parent, data, x, y, w, h, walkDelay)
 	mp:SetPos(0, labelH)
 	mp:SetSize(w, h - labelH)
 	mp:SetMouseInputEnabled(false)
-	SetupModel(mp, data.ply, data.model, RS_TRAITOR_POSE, data.spec, data.appearance, data.playerclass)
-	RS_EnableAutoFit(mp, RS_TRAITOR_POSE)
+	local pose = (data.main or not side or side == 0) and RS_TRAITOR_POSE or RS_SidePose(RS_TRAITOR_POSE, side)
+	SetupModel(mp, data.ply, data.model, pose, data.spec, data.appearance, data.playerclass)
+	RS_EnableAutoFit(mp, pose)
 
 	local label = vgui.Create("DPanel", fig)
-	label:SetPos(0, h - labelH - math.floor(ScrH() * 0.02))
+	label:SetPos(0, 0)
 	label:SetSize(w, labelH)
 	label:SetAlpha(0)
 	label.Paint = function(self, lw, lh)
@@ -1741,7 +1793,8 @@ local function ShowSummary(featured, winnerTeam, traitors)
 				local fw = isMain and math.floor(figW * 1.08) or figW
 				local fy = isMain and figY - math.floor(sh * 0.025) or figY
 				local fh = sh - fy
-				BuildTraitorFigure(traitorGroup, data, math.floor(cx - fw / 2), fy, fw, fh, lightOrder[i] or 0)
+				local side = (cx < sw / 2 - 1) and -1 or ((cx > sw / 2 + 1) and 1 or 0) -- the middle one keeps the gman pose
+				BuildTraitorFigure(traitorGroup, data, math.floor(cx - fw / 2), fy, fw, fh, lightOrder[i] or 0, side)
 			end
 			-- keep the heading readable over the big models
 			if IsValid(traitorGroup.Heading) then traitorGroup.Heading:MoveToFront() end
@@ -2405,7 +2458,6 @@ net.Receive("rem_roundsummary", function()
 	stats.damageDealt = net.ReadUInt(16)
 	stats.damageTaken = net.ReadUInt(16)
 	local modeName = net.ReadString()
-<<<<<<< HEAD
 	local traitors = {}
 	for i = 1, net.ReadUInt(4) do
 		local tp = net.ReadEntity()
@@ -2418,8 +2470,6 @@ net.Receive("rem_roundsummary", function()
 		local talive = net.ReadBool()
 		traitors[i] = { ply = tp, model = tmodel, name = tname, spec = tspec, appearance = tapp, playerclass = tclass, main = tmain, alive = talive }
 	end
-=======
->>>>>>> 937622b8d87af4e59553b7c8b6fb1091bd5bb24a
 	if participated and hg.RecordRoundStats then
 		hg.RecordRoundStats(stats, { mode = modeName, winner = winnerTeam, mapHasWindows = mapHasWindows })
 	end

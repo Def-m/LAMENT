@@ -18,6 +18,9 @@ local HeroWeaponData = {
 	["weapon_glock17"] = {extraClips = 0},
 	["weapon_usp"] = {extraClips = 0},
 	["weapon_chiappa_rhino"] = {extraClips = 0},
+	["weapon_m9beretta"] = {extraClips = 0},
+	["weapon_fn45"] = {extraClips = 0},
+	["weapon_m1911"] = {extraClips = 0},
 	["weapon_m590a1"] = {extraClips = 0, sling = true},
 	["weapon_mr43"] = {extraClips = 0, sling = true},
 	["weapon_mr43_short"] = {extraClips = 0},
@@ -40,6 +43,16 @@ local HeroUpgradeData = {
 	["hero_mr43_ammo"] = {parent = "weapon_mr43_short", type = "ammo", extraClips = 1},
 	["hero_mp18_ammo"] = {parent = "weapon_mp18", type = "ammo", extraClips = 8},
 	["hero_chiappa_ammo"] = {parent = "weapon_chiappa_rhino", type = "ammo", extraClips = 1},
+	["hero_m9_silencer"] = {parent = "weapon_m9beretta", type = "attachment", attachment = "supressor2"},
+	["hero_m9_rmr"] = {parent = "weapon_m9beretta", type = "attachment", attachment = "holo16"},
+	["hero_m9_laser"] = {parent = "weapon_m9beretta", type = "attachment", attachment = "laser3"},
+	["hero_m9_ammo"] = {parent = "weapon_m9beretta", type = "ammo", extraClips = 1},
+	["hero_fn45_silencer"] = {parent = "weapon_fn45", type = "attachment", attachment = "supressor2"},
+	["hero_fn45_rmr"] = {parent = "weapon_fn45", type = "attachment", attachment = "holo16"},
+	["hero_fn45_laser"] = {parent = "weapon_fn45", type = "attachment", attachment = "laser5"},
+	["hero_fn45_ammo"] = {parent = "weapon_fn45", type = "ammo", extraClips = 1},
+	["hero_m1911_silencer"] = {parent = "weapon_m1911", type = "attachment", attachment = "supressor4"},
+	["hero_m1911_ammo"] = {parent = "weapon_m1911", type = "ammo", extraClips = 1},
 	["hero_kar98_scope"] = {parent = "weapon_kar98", type = "attachment", attachment = "optic12"},
 	["hero_kar98_ammo"] = {parent = "weapon_kar98", type = "ammo", extraClips = 1},
 	["hero_mosin_silencer"] = {parent = "weapon_mosin", type = "attachment", attachment = "supressor9"},
@@ -92,6 +105,7 @@ local TraitorSkillsetSubRoles = {
 
 local ImprovisionWeapons = {
 	["weapon_hg_crossbow"] = true,
+	["weapon_hg_bow"] = true,
 	["weapon_zoraki"] = true,
 	["weapon_mp-80"] = true,
 	["weapon_tranquilizer"] = true,
@@ -104,6 +118,7 @@ local ImprovisionLoadoutItems = {
 	["weapon_hg_jam"] = true,
 	["weapon_traitor_poison_consumable"] = true,
 	["weapon_hg_crossbow_ammo"] = true,
+	["weapon_hg_bow_ammo"] = true,
 	["weapon_zoraki_ammo"] = true,
 	["weapon_mp-80_ammo"] = true,
 	["weapon_tranquilizer_ammo"] = true,
@@ -116,32 +131,103 @@ local TraitorAmmoUpgrades = {
 	["weapon_taser_ammo"] = {weapon = "weapon_taser"},
 	["weapon_revolver357_ammo"] = {weapon = "weapon_revolver357"},
 	["weapon_draco_ammo"] = {weapon = "weapon_draco"},
+	["weapon_dracovska_ammo"] = {weapon = "weapon_dracovska", exact = true}, -- exactly one spare magazine (its mag holds 10)
+	["weapon_hg_bow_ammo"] = {weapon = "weapon_hg_bow", ammo = 5, ammoName = "Arrow"},
 	["weapon_hg_crossbow_ammo"] = {weapon = "weapon_hg_crossbow", ammo = 4},
 	["weapon_zoraki_ammo"] = {weapon = "weapon_zoraki"},
 	["weapon_mp-80_ammo"] = {weapon = "weapon_mp-80"},
 	["weapon_tranquilizer_ammo"] = {weapon = "weapon_tranquilizer"},
 }
 
-local function ApplyCodeAttachments(weapon, attachments)
-	if not IsValid(weapon) or not istable(weapon.attachments) or not hg or not hg.SetAttachment then return end
+-- weapons that spawn with only their loaded magazine, so the extra ammo addon is the only spare
+local NoReserveAmmo = {
+	["weapon_dracovska"] = true,
+}
 
-	for _, attachmentId in ipairs(attachments) do
-		local placement, definition
-		for attachmentPlacement, definitions in pairs(hg.attachments or {}) do
-			if definitions[attachmentId] then
-				placement = attachmentPlacement
-				definition = definitions[attachmentId]
-				break
-			end
+local function FindAttachmentDefinition(attachmentId)
+	for attachmentPlacement, definitions in pairs(hg and hg.attachments or {}) do
+		if istable(definitions) and definitions[attachmentId] then
+			return attachmentPlacement, definitions[attachmentId]
 		end
-		if not placement then continue end
-		if hg.IsAttachmentCompatible and not hg.IsAttachmentCompatible(weapon, placement, attachmentId, definition) then continue end
-		hg.SetAttachment(weapon.attachments, attachmentId, weapon:GetClass())
+	end
+end
+
+-- returns the attachments that could not be installed (so they can be retried)
+local function ApplyCodeAttachments(weapon, attachments)
+	if not IsValid(weapon) or not hg or not hg.SetAttachment then return attachments end
+	if not istable(weapon.attachments) then
+		if not weapon.ClearAttachments then return attachments end
+		weapon:ClearAttachments()
+		if not istable(weapon.attachments) then return attachments end
 	end
 
-	if weapon.UpdateAttachmentModifiers then weapon:UpdateAttachmentModifiers() end
-	if weapon.SyncAtts then weapon:SyncAtts() end
+	local failed = {}
+	local changed = false
+	for _, attachmentId in ipairs(attachments) do
+		local placement, definition = FindAttachmentDefinition(attachmentId)
+		if not placement then continue end -- unknown attachment, never retry
+		if hg.IsAttachmentCompatible and not hg.IsAttachmentCompatible(weapon, placement, attachmentId, definition) then continue end
+		hg.SetAttachment(weapon.attachments, attachmentId, weapon:GetClass())
+		local installed = weapon.attachments[placement]
+		if istable(installed) and installed[1] == attachmentId then
+			changed = true
+		else
+			failed[#failed + 1] = attachmentId
+		end
+	end
+
+	if changed then
+		if weapon.UpdateAttachmentModifiers then weapon:UpdateAttachmentModifiers() end
+		if weapon.SyncAtts then
+			weapon:SyncAtts()
+		elseif weapon.SetNetVar then
+			weapon:SetNetVar("attachments", weapon.attachments)
+		end
+	end
+
+	return failed
 end
+
+-- applies attachments once the weapon has finished initializing, and retries
+-- once more in case something reset the weapon's attachments right after spawn
+local function ApplyLoadoutAttachments(ply, weaponClass, attachments)
+	if not istable(attachments) or #attachments == 0 then return end
+	local pending = table.Copy(attachments)
+	local function attempt(retries)
+		if not IsValid(ply) or not ply:HasWeapon(weaponClass) then return end
+		local weapon = ply:GetWeapon(weaponClass)
+		if not IsValid(weapon) then return end
+		pending = ApplyCodeAttachments(weapon, pending)
+		if #pending > 0 and retries > 0 then
+			timer.Simple(1, function() attempt(retries - 1) end)
+		end
+	end
+	timer.Simple(0.5, function() attempt(2) end)
+	-- weapon init can overwrite the table shortly after; re-check everything once
+	timer.Simple(2, function()
+		if not IsValid(ply) or not ply:HasWeapon(weaponClass) then return end
+		local weapon = ply:GetWeapon(weaponClass)
+		if not IsValid(weapon) or not istable(weapon.attachments) then return end
+		local missing = {}
+		for _, attachmentId in ipairs(attachments) do
+			local placement = FindAttachmentDefinition(attachmentId)
+			local installed = placement and weapon.attachments[placement]
+			if placement and not (istable(installed) and installed[1] == attachmentId) then
+				missing[#missing + 1] = attachmentId
+			end
+		end
+		if #missing > 0 then ApplyCodeAttachments(weapon, missing) end
+	end)
+end
+
+-- traitor menu addons that are attachments rather than items
+local TraitorAttachmentAddons = {
+	["weapon_p22_silencer"] = {weapon = "weapon_p22", attachment = "supressor1"},
+	["weapon_pl15_silencer"] = {weapon = "weapon_pl15", attachment = "supressor2"},
+	["weapon_usp_silencer"] = {weapon = "weapon_usp", attachment = "supressor2"},
+	["weapon_usp_rmr"] = {weapon = "weapon_usp", attachment = "holo16"},
+	["weapon_usp_laser"] = {weapon = "weapon_usp", attachment = "laser3"},
+}
 
 local function ParseLoadoutAttachmentId(id)
 	if not isstring(id) then return end
@@ -219,20 +305,10 @@ local function ApplyTraitorLoadout(ply)
 			continue
 		end
 
-		if wep == "weapon_p22_silencer" then
-			timer.Simple(0.5, function()
-				if IsValid(ply) and ply:HasWeapon("weapon_p22") then
-					local w = ply:GetWeapon("weapon_p22")
-					ApplyCodeAttachments(w, {"supressor1"})
-				end
-			end)
-		elseif wep == "weapon_pl15_silencer" then
-			timer.Simple(0.5, function()
-				if IsValid(ply) and ply:HasWeapon("weapon_pl15") then
-					local w = ply:GetWeapon("weapon_pl15")
-					ApplyCodeAttachments(w, {"supressor2"})
-				end
-			end)
+		local attachmentAddon = TraitorAttachmentAddons[wep]
+		if attachmentAddon then
+			loadoutAttachments[attachmentAddon.weapon] = loadoutAttachments[attachmentAddon.weapon] or {}
+			table.insert(loadoutAttachments[attachmentAddon.weapon], attachmentAddon.attachment)
 		elseif TraitorAmmoUpgrades[wep] then
 			local upgrade = TraitorAmmoUpgrades[wep]
 			timer.Simple(1.5, function()
@@ -240,10 +316,18 @@ local function ApplyTraitorLoadout(ply)
 				local weapon = ply:GetWeapon(upgrade.weapon)
 				if not IsValid(weapon) then return end
 
-				local ammoType = weapon:GetPrimaryAmmoType()
-				local ammoAmount = upgrade.ammo or weapon:GetMaxClip1()
-				if ammoType >= 0 and ammoAmount > 0 then
-					ply:GiveAmmo(ammoAmount, ammoType, true)
+				local ammoType = upgrade.ammoName or weapon:GetPrimaryAmmoType()
+				-- one magazine of whatever mag the gun actually has fitted (attachments can change it)
+				local magSize = (weapon.Primary and tonumber(weapon.Primary.ClipSize)) or weapon:GetMaxClip1()
+				if not magSize or magSize <= 0 then magSize = weapon:GetMaxClip1() end
+				local ammoAmount = upgrade.ammo or magSize
+				if (isstring(ammoType) or ammoType >= 0) and ammoAmount > 0 then
+					if upgrade.exact then
+						-- set the spare ammo outright so nothing else stacks extra magazines on top
+						ply:SetAmmo(ammoAmount, ammoType)
+					else
+						ply:GiveAmmo(ammoAmount, ammoType, true)
+					end
 				end
 			end)
 		else
@@ -253,7 +337,7 @@ local function ApplyTraitorLoadout(ply)
 					ply:Give(wep)
 				end
 			else
-				local w = ply:Give(wep)
+				local w = ply:Give(wep, NoReserveAmmo[wep] or false)
 				if wep == "weapon_zoraki" then
 					timer.Simple(1, function() if IsValid(w) then w:ApplyAmmoChanges(2) end end)
 				elseif wep == "weapon_p22" then
@@ -269,12 +353,7 @@ local function ApplyTraitorLoadout(ply)
 	end
 
 	for weaponClass, attachments in pairs(loadoutAttachments) do
-		local selectedAttachments = table.Copy(attachments)
-		timer.Simple(0.5, function()
-			if not IsValid(ply) or not ply:HasWeapon(weaponClass) then return end
-			local weapon = ply:GetWeapon(weaponClass)
-			if IsValid(weapon) then ApplyCodeAttachments(weapon, selectedAttachments) end
-		end)
+		ApplyLoadoutAttachments(ply, weaponClass, attachments)
 	end
 end
 
@@ -282,35 +361,45 @@ local function ApplyHeroLoadout(ply)
 	local convarName = MODE.Type == "soe" and "hmcd_soe_hero_loadout" or "hmcd_hero_loadout"
 	local loadout = ParseLoadoutString(ply:GetInfo(convarName))
 	local weaponsList = istable(loadout.weapons) and loadout.weapons or {}
-	local selectedWeapon = "weapon_px4beretta"
 
+	-- every gun the player paid for gets given, not just the first one
+	local selectedWeapons, selectedSet = {}, {}
 	for _, weaponId in ipairs(weaponsList) do
-		if HeroWeaponData[weaponId] then
-			selectedWeapon = weaponId
-			break
+		if HeroWeaponData[weaponId] and not selectedSet[weaponId] then
+			selectedSet[weaponId] = true
+			selectedWeapons[#selectedWeapons + 1] = weaponId
 		end
+	end
+	if #selectedWeapons == 0 then
+		selectedWeapons[1] = "weapon_px4beretta"
+		selectedSet["weapon_px4beretta"] = true
 	end
 
 	ply.organism.recoilmul = 1
 
+	local needsSling = false
+	for _, weaponId in ipairs(selectedWeapons) do
+		if HeroWeaponData[weaponId].sling then needsSling = true break end
+	end
+
 	local inv = ply:GetNetVar("Inventory", {})
 	inv["Weapons"] = inv["Weapons"] or {}
 	inv["Weapons"]["hg_flashlight"] = true
-	if HeroWeaponData[selectedWeapon] and HeroWeaponData[selectedWeapon].sling then
+	if needsSling then
 		inv["Weapons"]["hg_sling"] = true
 	end
 	ply:SetNetVar("Inventory", inv)
 
-	local weapon = ply:Give(selectedWeapon)
-	if not IsValid(weapon) then
-		return
-	end
-
-	if weapon:GetPrimaryAmmoType() >= 0 then
-		local baseInfo = HeroWeaponData[selectedWeapon]
-		local baseClips = baseInfo and baseInfo.extraClips or 0
-		if baseClips > 0 then
-			ply:GiveAmmo(weapon:GetMaxClip1() * baseClips, weapon:GetPrimaryAmmoType(), true)
+	local givenWeapons = {}
+	for _, weaponId in ipairs(selectedWeapons) do
+		local weapon = ply:Give(weaponId)
+		if not IsValid(weapon) then weapon = ply:GetWeapon(weaponId) end
+		if IsValid(weapon) then
+			givenWeapons[weaponId] = weapon
+			local baseClips = HeroWeaponData[weaponId].extraClips or 0
+			if baseClips > 0 and weapon:GetPrimaryAmmoType() >= 0 then
+				ply:GiveAmmo(weapon:GetMaxClip1() * baseClips, weapon:GetPrimaryAmmoType(), true)
+			end
 		end
 	end
 
@@ -348,37 +437,31 @@ local function ApplyHeroLoadout(ply)
 
 		local attachmentParent, attachmentId = ParseLoadoutAttachmentId(weaponId)
 		if attachmentParent then
-			if attachmentParent == selectedWeapon and attachmentId then
-				attachments[#attachments + 1] = attachmentId
+			if givenWeapons[attachmentParent] and attachmentId then
+				attachments[attachmentParent] = attachments[attachmentParent] or {}
+				table.insert(attachments[attachmentParent], attachmentId)
 			end
 			continue
 		end
 
 		local upgradeInfo = HeroUpgradeData[weaponId]
-		if not upgradeInfo or upgradeInfo.parent ~= selectedWeapon then
+		local parentWeapon = upgradeInfo and givenWeapons[upgradeInfo.parent]
+		if not IsValid(parentWeapon) then
 			continue
 		end
 
 		if upgradeInfo.type == "ammo" then
-			if weapon:GetPrimaryAmmoType() >= 0 then
-				ply:GiveAmmo(weapon:GetMaxClip1() * (upgradeInfo.extraClips or 0), weapon:GetPrimaryAmmoType(), true)
+			if parentWeapon:GetPrimaryAmmoType() >= 0 then
+				ply:GiveAmmo(parentWeapon:GetMaxClip1() * (upgradeInfo.extraClips or 0), parentWeapon:GetPrimaryAmmoType(), true)
 			end
 		elseif upgradeInfo.type == "attachment" and upgradeInfo.attachment then
-			attachments[#attachments + 1] = upgradeInfo.attachment
+			attachments[upgradeInfo.parent] = attachments[upgradeInfo.parent] or {}
+			table.insert(attachments[upgradeInfo.parent], upgradeInfo.attachment)
 		end
 	end
 
-	if #attachments > 0 then
-		timer.Simple(0.5, function()
-			if not IsValid(ply) or not ply:HasWeapon(selectedWeapon) then
-				return
-			end
-			local activeWeapon = ply:GetWeapon(selectedWeapon)
-			if not IsValid(activeWeapon) then
-				return
-			end
-			ApplyCodeAttachments(activeWeapon, attachments)
-		end)
+	for weaponClass, list in pairs(attachments) do
+		ApplyLoadoutAttachments(ply, weaponClass, list)
 	end
 end
 

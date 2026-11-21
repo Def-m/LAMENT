@@ -185,13 +185,8 @@ local function CreateMenuBarFonts()
     surface.CreateFont("ZCity_MenuBar_Name", {font = "IBM Plex Mono", size = math.max(14, math.floor(24 * scale)), weight = 400, antialias = true})
     surface.CreateFont("ZCity_MenuBar_XP", {font = "IBM Plex Mono", size = math.max(12, math.floor(17 * scale)), weight = 400, antialias = true})
     surface.CreateFont("ZCity_MenuBar_Title", {font = "IBM Plex Mono", size = math.max(18, math.floor(38 * scale)), weight = 400, antialias = true})
-<<<<<<< HEAD
     surface.CreateFont("ZCity_MenuBar_Button", {font = "IBM Plex Mono", size = math.max(14, math.floor(22 * scale)), weight = 400, antialias = true})
     surface.CreateFont("ZCity_MenuBar_ButtonBig", {font = "IBM Plex Mono", size = math.max(18, math.floor(36 * scale)), weight = 400, antialias = true})
-=======
-    surface.CreateFont("ZCity_MenuBar_Button", {font = "IBM Plex Mono", size = math.max(13, math.floor(19 * scale)), weight = 400, antialias = true})
-    surface.CreateFont("ZCity_MenuBar_ButtonBig", {font = "IBM Plex Mono", size = math.max(16, math.floor(32 * scale)), weight = 400, antialias = true})
->>>>>>> 937622b8d87af4e59553b7c8b6fb1091bd5bb24a
     surface.CreateFont("ZCity_MenuBar_Tiny", {font = "IBM Plex Mono", size = math.max(11, math.floor(14 * scale)), weight = 400, antialias = true})
 end
 
@@ -1204,13 +1199,6 @@ function PANEL:MakeMenuButton(parent, key, big)
         local chars = math.min(#text, math.floor((CurTime() - (self.OpenTime or 0)) * 22))
         local shown = text:sub(1, chars) .. string.rep("#", #text - chars)
         draw.SimpleText(shown, self.Font, w / 2, h / 2, hovered and menu_bar_text or menu_bar_text_idle, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-<<<<<<< HEAD
-=======
-
-        -- small status dot on the right
-        local dot = hovered and Color(175, 175, 175) or Color(85, 85, 85)
-        draw.RoundedBox(2, w - MenuUnit(12), h * 0.5 - MenuUnit(2), MenuUnit(4), MenuUnit(4), dot)
->>>>>>> 937622b8d87af4e59553b7c8b6fb1091bd5bb24a
     end
 
     function btn:DoClick()

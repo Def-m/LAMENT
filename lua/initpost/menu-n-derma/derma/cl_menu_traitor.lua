@@ -428,7 +428,7 @@ local RoleConfigs = {
 		presetFile = "zcity_improvision_traitor_presets.txt",
 		addonOrder = {},
 		items = {
-			["weapon_hg_crossbow"] = {cost = 8, name = "Homemade Crossbow", desc = "The high-lethality exception."},
+			["weapon_hg_crossbow"] = {cost = 10, name = "Homemade Crossbow", desc = "The high-lethality exception."},
             ["weapon_hg_bow"] = {cost = 5, name = "Hunting Bow", desc = "A bow that can be used to hunt."},
 			["weapon_zoraki"] = {cost = 3, name = "Zoraki Stalker M906"},
 			["weapon_mp-80"] = {cost = 3, name = "MP-80-13T"},
@@ -483,9 +483,9 @@ local RoleConfigs = {
         },
         addons = {
             ["hero_px4_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_px4beretta", desc = "Start with extra magazine."},
-            ["hero_glock_silencer"] = {cost = 2, name = "Suppressor", parent = "weapon_glock17", attachment = "supressor2", desc = "Suppress the Glock 17."},
-            ["hero_glock_rmr"] = {cost = 2, name = "RMR", parent = "weapon_glock17", attachment = "holo16", desc = "Adds a compact red dot."},
-            ["hero_glock_laser"] = {cost = 1, name = "Laser", parent = "weapon_glock17", attachment = "laser3", desc = "Adds a visible aiming laser."},
+            ["hero_glock_silencer"] = {cost = 2, name = "Suppressor", parent = "weapon_glock17", attachment = "supressor2", attachmentGroup = "suppressor", desc = "Suppress the Glock 17."},
+            ["hero_glock_rmr"] = {cost = 2, name = "RMR", parent = "weapon_glock17", attachment = "holo16", attachmentGroup = "optic", desc = "Adds a compact red dot."},
+            ["hero_glock_laser"] = {cost = 1, name = "Laser", parent = "weapon_glock17", attachment = "laser3", attachmentGroup = "laser", desc = "Adds a visible aiming laser."},
             ["hero_glock_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_glock17", desc = "Start with extra magazine."},
             ["hero_m590a1_ammo"] = {cost = 2, name = "Extra Shells", parent = "weapon_m590a1", desc = "Start with extra shells."},
             ["hero_kar98_scope"] = {cost = 2, name = "Scope", parent = "weapon_kar98", attachment = "optic12", desc = "Adds the Kar98 scope."},
@@ -493,7 +493,17 @@ local RoleConfigs = {
             ["hero_mr43_long_ammo"] = {cost = 2, name = "Extra Shells", parent = "weapon_mr43", desc = "Start with extra shells."},
             ["hero_mr43_ammo"] = {cost = 2, name = "Extra Shells", parent = "weapon_mr43_short", desc = "Start with extra shells."},
             ["hero_mp18_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_mp18", desc = "Start with extra rounds."},
-            ["hero_chiappa_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_chiappa_rhino", desc = "Start with extra revolver rounds."}
+            ["hero_chiappa_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_chiappa_rhino", desc = "Start with extra revolver rounds."},
+            ["hero_m9_silencer"] = {cost = 2, name = "Suppressor", parent = "weapon_m9beretta", attachment = "supressor2", attachmentGroup = "suppressor", desc = "Suppress the Beretta M9."},
+            ["hero_m9_rmr"] = {cost = 2, name = "RMR", parent = "weapon_m9beretta", attachment = "holo16", attachmentGroup = "optic", desc = "Adds a compact red dot."},
+            ["hero_m9_laser"] = {cost = 1, name = "Laser", parent = "weapon_m9beretta", attachment = "laser3", attachmentGroup = "laser", desc = "Adds a visible aiming laser."},
+            ["hero_m9_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_m9beretta", desc = "Start with extra magazine."},
+            ["hero_fn45_silencer"] = {cost = 2, name = "Suppressor", parent = "weapon_fn45", attachment = "supressor2", attachmentGroup = "suppressor", desc = "Suppress the FNX-45."},
+            ["hero_fn45_rmr"] = {cost = 2, name = "RMR", parent = "weapon_fn45", attachment = "holo16", attachmentGroup = "optic", desc = "Adds a compact red dot."},
+            ["hero_fn45_laser"] = {cost = 1, name = "Laser", parent = "weapon_fn45", attachment = "laser5", attachmentGroup = "laser", desc = "Adds a visible aiming laser."},
+            ["hero_fn45_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_fn45", desc = "Start with extra magazine."},
+            ["hero_m1911_silencer"] = {cost = 2, name = "Suppressor", parent = "weapon_m1911", attachment = "supressor4", attachmentGroup = "suppressor", desc = "Suppress the M1911."},
+            ["hero_m1911_ammo"] = {cost = 2, name = "Extra Ammo", parent = "weapon_m1911", desc = "Start with extra magazine."}
         },
         addonOrder = {
             ["weapon_px4beretta"] = {"hero_px4_ammo"},
@@ -504,6 +514,9 @@ local RoleConfigs = {
             ["weapon_kar98"] = {"hero_kar98_scope", "hero_kar98_ammo"},
             ["weapon_mp18"] = {"hero_mp18_ammo"},
             ["weapon_chiappa_rhino"] = {"hero_chiappa_ammo"},
+            ["weapon_m9beretta"] = {"hero_m9_silencer", "hero_m9_rmr", "hero_m9_laser", "hero_m9_ammo"},
+            ["weapon_fn45"] = {"hero_fn45_silencer", "hero_fn45_rmr", "hero_fn45_laser", "hero_fn45_ammo"},
+            ["weapon_m1911"] = {"hero_m1911_silencer", "hero_m1911_ammo"},
         },
         exclusions = {},
         defaultPresets = {
@@ -571,6 +584,7 @@ end
 AddTraitorAmmoUpgrade(RoleConfigs.traitor, "weapon_usp", "weapon_usp_ammo", 2)
 AddTraitorAmmoUpgrade(RoleConfigs.traitor, "weapon_taser", "weapon_taser_ammo", 2)
 AddTraitorAmmoUpgrade(RoleConfigs.traitor_improvision, "weapon_hg_crossbow", "weapon_hg_crossbow_ammo", 2, "Start with 4 extra bolts.")
+AddTraitorAmmoUpgrade(RoleConfigs.traitor_improvision, "weapon_hg_bow", "weapon_hg_bow_ammo", 2, "Start with 5 extra arrows.")
 AddTraitorAmmoUpgrade(RoleConfigs.traitor_improvision, "weapon_zoraki", "weapon_zoraki_ammo", 2)
 AddTraitorAmmoUpgrade(RoleConfigs.traitor_improvision, "weapon_mp-80", "weapon_mp-80_ammo", 2)
 AddTraitorAmmoUpgrade(RoleConfigs.traitor_improvision, "weapon_tranquilizer", "weapon_tranquilizer_ammo", 2)
