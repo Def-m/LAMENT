@@ -266,6 +266,7 @@ local radialIconMaterials = {
 	["unload"] = Material("radialmenu/unload.png", "smooth mips"),
 	["roll drum"] = Material("radialmenu/spindrum.png", "smooth mips"),
 	["fix dislocation"] = Material("radialmenu/broken.png", "smooth mips"),
+	["inventory"] = Material("radialmenu/inventory.png", "smooth mips"),
 }
 
 local function NormalizeRadialText(txt)

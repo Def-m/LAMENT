@@ -32,6 +32,8 @@ if CLIENT then
 	local OpenInv
 	net.Receive("should_open_inv", function()
 		local ent = net.ReadEntity()
+		-- LAMENT: drag-to-loot replaces the grid menu (lament_dragloot 0 to get the grid back)
+		if hg.DragLoot and hg.DragLoot.Enabled() then hg.DragLoot.Open(ent) return end
 		OpenInv(ent)
 	end)
 
@@ -165,6 +167,12 @@ if CLIENT then
 			net.WriteEntity(owner)
 		net.SendToServer()
 	end
+
+	-- LAMENT: shared with cl_lament_dragloot.lua
+	hg.LootHelpers = {
+		nameThings = nameThings, getIconThing = getIconThing, TakeItem = TakeItem,
+		canLoot = functions2, canTake = functions,
+	}
 
 	local plyMenu
 	local chosen
