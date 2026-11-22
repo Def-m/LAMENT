@@ -819,19 +819,21 @@ end
 hg = hg or {}
 hg.RoundSummaryEnabled = true
 
-surface.CreateFont("Rem_Sum_AwardBig", { font = "ITC Avant Garde Gothic", size = ScreenScale(23), weight = 800, antialias = true, extended = true })
-surface.CreateFont("Rem_Sum_Award", { font = "ITC Avant Garde Gothic", size = ScreenScale(21), weight = 800, antialias = true, extended = true })
-surface.CreateFont("Rem_Sum_NameBig", { font = "ITC Avant Garde Gothic", size = ScreenScale(17), weight = 700, antialias = true, extended = true })
-surface.CreateFont("Rem_Sum_Name", { font = "ITC Avant Garde Gothic", size = ScreenScale(16), weight = 700, antialias = true, extended = true })
-surface.CreateFont("Rem_Sum_DescBig", { font = "ITC Avant Garde Gothic", size = ScreenScale(20), weight = 500, antialias = true, extended = true })
-surface.CreateFont("Rem_Sum_Desc", { font = "ITC Avant Garde Gothic", size = ScreenScale(16), weight = 500, antialias = true, extended = true })
-surface.CreateFont("Rem_Sum_XPBig", { font = "ITC Avant Garde Gothic", size = ScreenScale(17), weight = 600, antialias = true, extended = true })
-surface.CreateFont("Rem_Sum_XP", { font = "ITC Avant Garde Gothic", size = ScreenScale(14), weight = 600, antialias = true, extended = true })
-surface.CreateFont("Rem_Sum_Stat", { font = "ITC Avant Garde Gothic", size = ScreenScale(21), weight = 800, antialias = true, extended = true })
-surface.CreateFont("Rem_Sum_Countdown", { font = "ITC Avant Garde Gothic", size = ScreenScale(23), weight = 800, antialias = true, extended = true })
+-- the whole summary (MVP cards, countdown, winner) uses the traitor reveal's font
+local RS_TRAITOR_FONT = "Cascadia Code SemiLight"
+local RS_FONT_WEIGHT = 350
+surface.CreateFont("Rem_Sum_AwardBig", { font = RS_TRAITOR_FONT, size = ScreenScale(23), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
+surface.CreateFont("Rem_Sum_Award", { font = RS_TRAITOR_FONT, size = ScreenScale(21), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
+surface.CreateFont("Rem_Sum_NameBig", { font = RS_TRAITOR_FONT, size = ScreenScale(17), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
+surface.CreateFont("Rem_Sum_Name", { font = RS_TRAITOR_FONT, size = ScreenScale(16), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
+surface.CreateFont("Rem_Sum_DescBig", { font = RS_TRAITOR_FONT, size = ScreenScale(20), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
+surface.CreateFont("Rem_Sum_Desc", { font = RS_TRAITOR_FONT, size = ScreenScale(16), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
+surface.CreateFont("Rem_Sum_XPBig", { font = RS_TRAITOR_FONT, size = ScreenScale(17), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
+surface.CreateFont("Rem_Sum_XP", { font = RS_TRAITOR_FONT, size = ScreenScale(14), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
+surface.CreateFont("Rem_Sum_Stat", { font = RS_TRAITOR_FONT, size = ScreenScale(21), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
+surface.CreateFont("Rem_Sum_Countdown", { font = RS_TRAITOR_FONT, size = ScreenScale(23), weight = RS_FONT_WEIGHT, antialias = true, extended = true })
 
 -- traitor reveal text
-local RS_TRAITOR_FONT = "Cascadia Code SemiLight"
 surface.CreateFont("Rem_Traitor_Heading", { font = RS_TRAITOR_FONT, size = ScreenScale(24), weight = 350, antialias = true, extended = true })
 surface.CreateFont("Rem_Traitor_Name", { font = RS_TRAITOR_FONT, size = ScreenScale(16), weight = 350, antialias = true, extended = true })
 surface.CreateFont("Rem_Traitor_Role", { font = RS_TRAITOR_FONT, size = ScreenScale(12), weight = 350, antialias = true, extended = true })
@@ -886,6 +888,10 @@ local POSES = {
 	{ seqs = { "idle_all_angry", "idle_all_01", "idle_all_02" },       ang = Angle(0, -9, 0),  cam = Vector(68, 11, 36), fov = 35, target = Vector(0, 0, 38), hy = -0.3, hp = -0.05 },
 }
 
+-- how much of the space above the feet the body fills when it stands on something (RSFootFrac);
+-- higher = bigger character, less room above the head
+local RS_FIT_HEADROOM = 0.9
+
 -- used by the traitor reveal and the MVP cards: combine idle, whole body in frame
 local RS_REVEAL_POSE = {
 	seqs = { "menu_gman", "idle_all_01", "idle_all_02" },
@@ -926,10 +932,15 @@ local function RS_SidePose(base, side)
 	return pose
 end
 
--- the top MVP stands in the gman idle
+-- the top MVP cheers once (taunt_cheer), then stands in the combine idle
 local RS_MVP_MAIN_POSE = table.Copy(RS_MVP_POSE)
-RS_MVP_MAIN_POSE.seqs = { "menu_gman", "idle_all_01", "idle_all_02" }
-RS_MVP_MAIN_POSE.playOnce = true -- play through once, then hold the last frame
+RS_MVP_MAIN_POSE.seqs = { "taunt_cheer", "menu_gman", "idle_all_01" }
+-- cheer once, then switch to the combine idle. holding the cheer's last frame doesn't work: the end
+-- of taunt_cheer falls back toward the reference A pose on player models, so hand over a bit before it
+RS_MVP_MAIN_POSE.afterSeqs = { "menu_combine", "idle_all_01", "idle_all_02" }
+-- how far through the cheer (0-1) to switch; tweak live with the console: lament_mvp_cheer_switch 0.75
+RS_MVP_MAIN_POSE.afterAtConVar = CreateClientConVar("lament_mvp_cheer_switch", "0.8", true, false, "how far through the MVP cheer (0-1) to switch to the combine pose", 0, 1)
+RS_MVP_MAIN_POSE.afterAt = 0.8
 
 local RS_Container
 local RS_Sound
@@ -1182,6 +1193,15 @@ local function SetupModel(mp, ply, model, pose, spec, appearance, playerClassNam
 				ent.PreviewAccessoryColors = appearance.AAttachmentColors
 			end
 		end
+		if not spec and hg.SetupPreviewModel then
+			-- clothing colors and masks: route the appearance lookups to the real player
+			-- (see hg.SetupPreviewModel in new_appearance/cl_init.lua). when the card has a saved
+			-- appearance, keep its color and accessory colors instead of the player's live ones
+			local clr = istable(appearance) and appearance.AColor
+			local colorVec = clr and Vector((clr.r or 255) / 255, (clr.g or 255) / 255, (clr.b or 255) / 255) or nil
+			if istable(appearance) and appearance.AAttachmentColors then ent.HGPreviewOwnColors = false end
+			hg.SetupPreviewModel(ent, ply, colorVec)
+		end
 		if self.RSFallback then
 			ent:SetMaterial("models/debug/debugwhite")
 			ent:SetColor(color_black)
@@ -1247,7 +1267,7 @@ local function SetupModel(mp, ply, model, pose, spec, appearance, playerClassNam
 			end
 		end
 		-- or hand over to a follow-up idle once they finish
-		if pose.afterSeqs and not self.RSAfterDone and targetSeq == self.RSIdleSeq and ent:GetCycle() >= 0.99 then
+		if pose.afterSeqs and not self.RSAfterDone and targetSeq == self.RSIdleSeq and ent:GetCycle() >= ((pose.afterAtConVar and pose.afterAtConVar:GetFloat()) or pose.afterAt or 0.99) then
 			self.RSAfterDone = true
 			local after = -1
 			for _, name in ipairs(pose.afterSeqs) do
@@ -1272,11 +1292,20 @@ local function SetupModel(mp, ply, model, pose, spec, appearance, playerClassNam
 			-- back the camera off until the whole body fits this panel's shape
 			local pw, ph = math.max(self:GetWide(), 1), math.max(self:GetTall(), 1)
 			local halfTan = math.tan(math.rad(pose.fov / 2))
-			local distH = pose.fitHalfHeight / (halfTan / (pw / ph))
+			-- with RSFootFrac the body has to fit between the top of the panel and the feet
+			-- (a bit of headroom for raised arms)
+			local fitPh = self.RSFootFrac and math.max(ph * self.RSFootFrac * RS_FIT_HEADROOM, 1) or ph
+			local distH = pose.fitHalfHeight / (halfTan / (pw / fitPh))
 			local distW = pose.fitHalfWidth / halfTan
 			local dist = self.RSFitDist or math.max(distH, distW)
 			self.RSFitDistUsed = dist
-			self:SetCamPos(pose.target + Vector(dist, 0, 0))
+			local camPos = pose.target + Vector(dist, 0, 0)
+			if self.RSFootFrac then
+				-- move the (level) camera up/down so the feet (z = 0) land at RSFootFrac of the panel height
+				local visHalf = dist * halfTan / (pw / ph)
+				camPos.z = (self.RSFootFrac - 0.5) * 2 * visHalf
+			end
+			self:SetCamPos(camPos)
 			self:SetLookAng(Angle(0, 180, 0))
 		else
 			self:SetCamPos(pose.cam)
@@ -1333,24 +1362,106 @@ local function GetProfileState(ply, expOverride, skillOverride)
 	return exp .. " XP", band, medal
 end
 
+-- the lamp's light is drawn from two gradient textures, rendered once into render targets:
+--   beam : soft across its width (fades to nothing at both sides), bright at the top, dimmer at the floor
+--   pool : radial, bright in the middle, fades to nothing at the edge
+-- both are additive, so tinting them warm over the dark background gives a smooth gradient.
+local RS_LAMP_TEX = 128
+local RS_Lamp = {}
+
+local function RS_LampMaterial(name, rt)
+	return CreateMaterial(name, "UnlitGeneric", {
+		["$basetexture"] = rt:GetName(),
+		["$additive"] = "1",
+		["$vertexcolor"] = "1",
+		["$vertexalpha"] = "1",
+		["$ignorez"] = "1",
+	})
+end
+
+local function RS_BuildLampTextures()
+	local size = RS_LAMP_TEX
+	RS_Lamp.BeamRT = RS_Lamp.BeamRT or GetRenderTargetEx("lament_rs_lamp_beam", size, size, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 4 + 8, 0, IMAGE_FORMAT_RGBA8888)
+	RS_Lamp.PoolRT = RS_Lamp.PoolRT or GetRenderTargetEx("lament_rs_lamp_pool", size, size, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 4 + 8, 0, IMAGE_FORMAT_RGBA8888)
+
+	-- beam: brightness = across(u) * down(v)
+	render.PushRenderTarget(RS_Lamp.BeamRT)
+	render.OverrideAlphaWriteEnable(true, true)
+	render.Clear(0, 0, 0, 255, true, true)
+	cam.Start2D()
+		for y = 0, size - 1 do
+			local v = (y + 0.5) / size
+			local down = 0.3 + 0.7 * (1 - v) ^ 1.6
+			for x = 0, size - 1 do
+				local u = (x + 0.5) / size * 2 - 1 -- -1 .. 1 across the beam
+				local across = (1 - u * u) ^ 2
+				local val = math.Round(255 * across * down)
+				surface.SetDrawColor(val, val, val, 255)
+				surface.DrawRect(x, y, 1, 1)
+			end
+		end
+	cam.End2D()
+	render.OverrideAlphaWriteEnable(false)
+	render.PopRenderTarget()
+
+	-- pool: radial, (1 - r^2)^2
+	render.PushRenderTarget(RS_Lamp.PoolRT)
+	render.OverrideAlphaWriteEnable(true, true)
+	render.Clear(0, 0, 0, 255, true, true)
+	cam.Start2D()
+		local c = size / 2
+		for y = 0, size - 1 do
+			for x = 0, size - 1 do
+				local dx, dy = (x + 0.5 - c) / c, (y + 0.5 - c) / c
+				local r2 = math.min(dx * dx + dy * dy, 1)
+				local val = math.Round(255 * (1 - r2) ^ 2)
+				surface.SetDrawColor(val, val, val, 255)
+				surface.DrawRect(x, y, 1, 1)
+			end
+		end
+	cam.End2D()
+	render.OverrideAlphaWriteEnable(false)
+	render.PopRenderTarget()
+
+	RS_Lamp.BeamMat = RS_Lamp.BeamMat or RS_LampMaterial("lament_rs_lamp_beam_mat", RS_Lamp.BeamRT)
+	RS_Lamp.PoolMat = RS_Lamp.PoolMat or RS_LampMaterial("lament_rs_lamp_pool_mat", RS_Lamp.PoolRT)
+	RS_Lamp.Built = true
+end
+
+-- built outside of panel painting (pushing a render target mid-VGUI paint can break its state);
+-- RS_Lamp.Wanted is set by the lamp panels, and render targets can lose their contents on a
+-- resolution change, so they get rebuilt then
+hook.Add("DrawOverlay", "RS_LampTextures", function()
+	if RS_Lamp.Built or not RS_Lamp.Wanted then return end
+	RS_BuildLampTextures()
+end)
+hook.Add("OnScreenSizeChanged", "RS_LampTextures", function() RS_Lamp.Built = false end)
+
+local RS_CARD_MAIN_W = 0.36 -- card widths as a fraction of the screen (2 sides + main = 100%)
+local RS_CARD_SIDE_W = 0.32
+local RS_CARD_BAND_H = 0.27 -- height of the gradient band the MVPs stand on
+local RS_CARD_BOTTOM = 0.02 -- gap under the bands
+local RS_CARD_FEET_SINK = 0.6 -- how far down into the band the feet stand (0 = top edge of the band)
+local RS_BAND_REACH = 1.75 -- how high the gradient reaches, as a multiple of the band height
+local RS_CARD_EDGE_FADE = 0.22 -- how much of each side of a band fades out / blends into its neighbour
+
 local function BuildCard(parent, data, slot)
 	local sw, sh = ScrW(), ScrH()
 	local big = slot == 1
 	local pose = big and RS_MVP_MAIN_POSE or RS_SidePose(RS_MVP_POSE, slot == 2 and -1 or 1)
 
-	local refW, refH = math.min(sw, 1920), math.min(sh, 1080)
-	local scale = math.min(refW / 1920, refH / 1080)
-	local w = big and math.floor(refW * 0.29) or math.floor(refW * 0.235)
-	local h = big and math.floor(refH * 0.9) or math.floor(refH * 0.82)
-	w = math.min(w, math.floor((refW - math.max(math.floor(refW * 0.03), 16) * 2) * (big and 0.38 or 0.31)))
-	h = math.min(h, math.floor(sh - math.max(36, 58 * scale)))
-	local infoH = big and math.floor(h * 0.34) or math.floor(h * 0.33)
+	-- cards sit side by side across the bottom of the screen (main one in the middle, wider and
+	-- taller); every character stands on a gradient band of the same height in their award's color
+	local w = math.floor(sw * (big and RS_CARD_MAIN_W or RS_CARD_SIDE_W))
+	local h = math.floor(sh * (big and 0.9 or 0.8)) -- (main one leaves room for the "MVP OF THE ROUND" heading)
+	local infoH = math.floor(sh * RS_CARD_BAND_H) -- the band (name / avatar / xp live in it)
 
 	local info = AWARD_INFO[data.key] or AWARD_INFO.participant
 	local accent = info.color
 
 	local card = vgui.Create("DPanel", parent)
 	card:SetSize(w, h)
+	card.RSAccent = accent
 	card:SetAlpha(0)
 	card:SetPaintBackground(false)
 	card.RSInfo = 0
@@ -1361,26 +1472,10 @@ local function BuildCard(parent, data, slot)
 		self.RSInfo = Lerp(FrameTime() * 6, self.RSInfo, target)
 	end
 
-	card.Paint = function(self, cw, ch)
-		local lit = self.RSLightStart and (self.RSLightNow or 0) or 1
-		surface.SetDrawColor(0, 0, 0, big and 26 or 18)
-		surface.DrawRect(0, 0, cw, ch)
-		surface.SetDrawColor(255, 255, 255, 110 * lit)
-		surface.DrawOutlinedRect(0, 0, cw, ch, 1)
+	-- (the gradient band under the card is drawn by the shared band strip in ShowSummary)
+	card.Paint = function() end
 
-		local rise = math.floor(infoH * self.RSInfo)
-		if rise > 0 then
-			local texH = math.min(ch, math.floor(rise * 2.15))
-			local y = ch - texH
-			surface.SetDrawColor(4, 4, 6, big and 78 or 64)
-			surface.DrawRect(0, ch - rise, cw, rise)
-			surface.SetMaterial(RS_GradD)
-			surface.SetDrawColor(accent.r, accent.g, accent.b, big and 88 or 74)
-			surface.DrawTexturedRect(0, y, cw, texH)
-		end
-	end
-
-	local modelTop = math.floor(h * 0.12)
+	local modelTop = math.floor(h * 0.07)
 	local modelH = h - modelTop - math.floor(h * 0.01)
 	local modelWrap = vgui.Create("DPanel", card)
 	modelWrap:SetSize(w, modelH)
@@ -1394,6 +1489,8 @@ local function BuildCard(parent, data, slot)
 	mp:SetPos(0, 0)
 	mp:SetMouseInputEnabled(false)
 	SetupModel(mp, data.ply, data.model, pose, data.spec, data.appearance, data.playerclass)
+	-- stand in the band: feet RS_CARD_FEET_SINK of the way down into it, body fitted into the space above
+	mp.RSFootFrac = ((h - infoH + infoH * RS_CARD_FEET_SINK) - modelTop) / math.max(modelH, 1)
 
 	local titleFont = big and "Rem_Sum_AwardBig" or "Rem_Sum_Award"
 	local descFont = big and "Rem_Sum_DescBig" or "Rem_Sum_Desc"
@@ -1416,10 +1513,10 @@ local function BuildCard(parent, data, slot)
 	infoWrap:SetAlpha(0)
 	infoWrap.Paint = function() end
 
-	local avS = big and math.floor(w * 0.19) or math.floor(w * 0.205)
+	local avS = math.floor(infoH * 0.34)
 	local av = vgui.Create("AvatarImage", infoWrap)
 	av:SetSize(avS, avS)
-	av:SetPos(math.floor(w / 2 - avS / 2), math.floor(infoH * 0.1))
+	av:SetPos(math.floor(w / 2 - avS / 2), math.floor(infoH * 0.08))
 	av:SetMouseInputEnabled(false)
 	av:SetSteamID(data.steamid, 64)
 	av.PaintOver = function(self, aw, ah)
@@ -1436,7 +1533,7 @@ local function BuildCard(parent, data, slot)
 	name:SizeToContents()
 
 	local medal = vgui.Create("DPanel", infoWrap)
-	medal:SetSize(big and math.floor(w * 0.105) or math.floor(w * 0.12), big and math.floor(w * 0.105) or math.floor(w * 0.12))
+	medal:SetSize(math.floor(infoH * 0.2), math.floor(infoH * 0.2))
 	medal.Band = RS_FallbackBand
 	medal.Medal = RS_FallbackMedal
 	medal.Paint = function(this, mw, mh)
@@ -1502,7 +1599,7 @@ local function BuildCard(parent, data, slot)
 		name:SetContentAlignment(5)
 		local _, nameH = name:GetContentSize()
 		name:SetTall(nameH)
-		local medalY = infoH - medal:GetTall() - math.floor(infoH * 0.16)
+		local medalY = infoH - medal:GetTall() - math.floor(infoH * 0.1)
 		local gainGap = gainXP:GetAlpha() > 0 and math.floor(w * 0.015) or 0
 		local totalW = medal:GetWide() + math.floor(w * 0.025) + xp:GetWide() + gainGap + (gainXP:GetAlpha() > 0 and gainXP:GetWide() or 0)
 		local startX = math.floor(w / 2 - totalW / 2)
@@ -1566,49 +1663,54 @@ local function RS_TexTrapezoid(cx, y1, w1, y2, w2, cxBottom)
 end
 
 local RS_LAMP_WARM = { r = 255, g = 236, b = 196 }
+local RS_LAMP_PAD = 0.2 -- extra lamp width on each side of the figure, as a fraction of the figure's width
+
+-- trapezoid cut into thin horizontal strips so the texture follows the slanted sides
+-- (a single textured quad gets skewed along its diagonal)
+local function RS_TexTrapezoidStrips(cx, y1, w1, y2, w2, strips)
+	strips = strips or 48
+	for i = 0, strips - 1 do
+		local a, b = i / strips, (i + 1) / strips
+		local ya, yb = Lerp(a, y1, y2), Lerp(b, y1, y2)
+		local wa, wb = Lerp(a, w1, w2), Lerp(b, w1, w2)
+		surface.DrawPoly({
+			{ x = cx - wa / 2, y = ya, u = 0, v = a },
+			{ x = cx + wa / 2, y = ya, u = 1, v = a },
+			{ x = cx + wb / 2, y = yb, u = 1, v = b },
+			{ x = cx - wb / 2, y = yb, u = 0, v = b },
+		})
+	end
+end
 
 -- a light shining down on the traitor from somewhere above the screen:
 -- soft cone, pool of light on the floor, a little dust drifting through it
 local function RS_PaintLamp(w, h, shadeBottom, floorY, f, seed)
+	RS_Lamp.Wanted = true
 	if not f or f <= 0 then return end
 	local t = RealTime()
 	local cx = w / 2
 	local topY = -h * 0.05
-	local topW = w * 0.16
-	local beamBottomW = w * 0.78
+	-- (w here is the lamp panel, 1 + 2 * RS_LAMP_PAD times the figure's width: about 25% bigger than before)
+	local topW = w * 0.14
+	local beamBottomW = w * 0.7
 	local wr = RS_LAMP_WARM
 
-	surface.SetMaterial(RS_GradU)
-	local layers = {
-		{ 1.00, 26 },
-		{ 0.78, 30 },
-		{ 0.52, 38 },
-		{ 0.30, 42 },
-	}
-	for _, l in ipairs(layers) do
-		surface.SetDrawColor(wr.r, wr.g, wr.b, l[2] * f)
-		RS_TexTrapezoid(cx, topY, topW * (0.5 + 0.5 * l[1]), floorY, beamBottomW * l[1])
-	end
+	if RS_Lamp.Built then
+		-- the cone
+		surface.SetMaterial(RS_Lamp.BeamMat)
+		surface.SetDrawColor(wr.r, wr.g, wr.b, 150 * f)
+		RS_TexTrapezoidStrips(cx, topY, topW, floorY, beamBottomW)
 
-	-- faint even fill so the cone still reaches the floor
-	draw.NoTexture()
-	surface.SetDrawColor(wr.r, wr.g, wr.b, 9 * f)
-	surface.DrawPoly({
-		{ x = cx - topW * 0.5, y = topY },
-		{ x = cx + topW * 0.5, y = topY },
-		{ x = cx + beamBottomW * 0.5, y = floorY },
-		{ x = cx - beamBottomW * 0.5, y = floorY },
-	})
-
-	-- pool of light on the floor
-	local poolRX = beamBottomW * 0.52
-	for i = 6, 1, -1 do
-		local k = i / 6
-		surface.SetDrawColor(wr.r, wr.g, wr.b, (10 + (1 - k) * 18) * f)
-		RS_Ellipse(cx, floorY, poolRX * k, poolRX * 0.13 * k)
+		-- pool of light on the floor
+		local poolRX = beamBottomW * 0.55
+		local poolRY = poolRX * 0.17
+		surface.SetMaterial(RS_Lamp.PoolMat)
+		surface.SetDrawColor(wr.r, wr.g, wr.b, 110 * f)
+		surface.DrawTexturedRect(cx - poolRX, floorY - poolRY, poolRX * 2, poolRY * 2)
 	end
 
 	-- dust drifting through the light
+	draw.NoTexture()
 	for i = 1, 10 do
 		local p = ((t * (0.04 + i * 0.007) + i * 0.137 + seed) % 1)
 		local my = Lerp(p, 10, floorY - 10)
@@ -1626,8 +1728,9 @@ local function BuildTraitorFigure(parent, data, x, y, w, h, walkDelay, side)
 
 	-- the lamp hangs above this traitor and lights them up; it sits behind the model
 	local lamp = vgui.Create("DPanel", parent)
-	lamp:SetPos(x, 0)
-	lamp:SetSize(w, ScrH())
+	local lampPad = math.floor(w * RS_LAMP_PAD) -- lamp panel is wider than the figure so the light can spread past it
+	lamp:SetPos(x - lampPad, 0)
+	lamp:SetSize(w + lampPad * 2, ScrH())
 	lamp:SetMouseInputEnabled(false)
 	local seed = math.Rand(0, 10)
 	local shadeBottom = y + math.floor(labelH * 0.8)
@@ -1653,6 +1756,8 @@ local function BuildTraitorFigure(parent, data, x, y, w, h, walkDelay, side)
 	local pose = (data.main or not side or side == 0) and RS_TRAITOR_POSE or RS_SidePose(RS_TRAITOR_POSE, side)
 	SetupModel(mp, data.ply, data.model, pose, data.spec, data.appearance, data.playerclass)
 	RS_EnableAutoFit(mp, pose)
+	-- stand the feet on the floor line (where the pool of light is), as a fraction of the model panel
+	mp.RSFootFrac = (floorY - (y + labelH)) / math.max(h - labelH, 1)
 
 	local label = vgui.Create("DPanel", fig)
 	label:SetPos(0, 0)
@@ -1677,7 +1782,109 @@ local function BuildTraitorFigure(parent, data, x, y, w, h, walkDelay, side)
 	return fig
 end
 
+-- one strip across the bottom of the screen with every MVP's gradient band, drawn behind the cards.
+-- each band covers its card's spot; a spot with no MVP is covered by the band next to it (so the
+-- main MVP's band stretches over missing side cards). where two bands meet, both blend toward the
+-- halfway mix of their colors so they merge; only the outer ends of the strip fade out.
+local function RS_BuildBandStrip(container, bySlot, mainX, mainW, startTime)
+	local sw, sh = ScrW(), ScrH()
+	local bandH = math.floor(sh * RS_CARD_BAND_H)
+	local stripH = math.floor(bandH * RS_BAND_REACH) -- taller than the band: the gradient fades out above it
+	local main = bySlot[1]
+	if not main then return end
+
+	local segs = {}
+	local mainX0, mainX1 = 0, sw -- the main band takes over any missing side spot
+	if bySlot[2] then
+		segs[#segs + 1] = { x0 = 0, x1 = mainX, color = bySlot[2].card.RSAccent }
+		mainX0 = mainX
+	end
+	segs[#segs + 1] = { x0 = mainX0, x1 = bySlot[3] and (mainX + mainW) or sw, color = main.card.RSAccent }
+	if bySlot[3] then
+		segs[#segs + 1] = { x0 = mainX + mainW, x1 = sw, color = bySlot[3].card.RSAccent }
+	end
+	for _, seg in ipairs(segs) do seg.seed = math.Rand(0, 100) end
+
+	local strip = vgui.Create("DPanel", container)
+	strip:SetPos(0, sh - math.floor(sh * RS_CARD_BOTTOM) - stripH)
+	strip:SetSize(sw, stripH)
+	strip:SetMouseInputEnabled(false)
+	strip:MoveToBack() -- behind the cards...
+	if IsValid(container.BG) then container.BG:MoveToBack() end -- ...but in front of the black background
+	strip.OffX, strip.OffY = 0, sh -- slides away with the cards when the summary closes
+	container.Cards[#container.Cards + 1] = strip
+	strip.Rise = 0
+
+	strip.Paint = function(self, bw, bh)
+		RS_Lamp.Wanted = true
+		self.Rise = Lerp(FrameTime() * 6, self.Rise, CurTime() >= startTime and 1 or 0)
+		local rise = math.floor(bandH * self.Rise)
+		if rise <= 0 then return end
+		local texH = math.min(bh, math.floor(rise * RS_BAND_REACH))
+		local top = bh - texH
+
+		local pulse = 0.85 + 0.15 * math.sin(RealTime() * 1.7)
+		local darkA, colA = 140, 64 * pulse
+		local step = 4
+		local si = 1
+		surface.SetMaterial(RS_GradD)
+		for sx = 0, bw - 1, step do
+			local xc = sx + step / 2
+			while segs[si + 1] and xc >= segs[si].x1 do si = si + 1 end
+			local seg = segs[si]
+			local prev, nxt = segs[si - 1], segs[si + 1]
+			local edge = math.max((seg.x1 - seg.x0) * RS_CARD_EDGE_FADE, 1)
+			local dL = math.Clamp((xc - seg.x0) / edge, 0, 1)
+			local dR = math.Clamp((seg.x1 - xc) / edge, 0, 1)
+			local sL = dL * dL * (3 - 2 * dL)
+			local sR = dR * dR * (3 - 2 * dR)
+			local k = 1
+			local c = seg.color
+			local r, g, b = c.r, c.g, c.b
+			if prev then
+				local mix = (1 - sL) * 0.5
+				r, g, b = Lerp(mix, r, prev.color.r), Lerp(mix, g, prev.color.g), Lerp(mix, b, prev.color.b)
+			else
+				k = k * sL
+			end
+			if nxt then
+				local mix = (1 - sR) * 0.5
+				r, g, b = Lerp(mix, r, nxt.color.r), Lerp(mix, g, nxt.color.g), Lerp(mix, b, nxt.color.b)
+			else
+				k = k * sR
+			end
+			if k > 0 then
+				local w2 = math.min(step, bw - sx)
+				surface.SetDrawColor(0, 0, 0, darkA * k) -- soft dark backdrop so the text stays readable
+				surface.DrawTexturedRect(sx, top, w2, texH)
+				surface.SetDrawColor(r, g, b, colA * k) -- award color, gently pulsing
+				surface.DrawTexturedRect(sx, top, w2, texH)
+			end
+		end
+
+		-- soft blobs of light drifting along the bottom of each band (only their top halves show)
+		if RS_Lamp.Built then
+			surface.SetMaterial(RS_Lamp.PoolMat)
+			local t = RealTime()
+			for _, seg in ipairs(segs) do
+				local segW = seg.x1 - seg.x0
+				local cxs = (seg.x0 + seg.x1) / 2
+				local gw, gh = math.min(segW * 0.95, sw * 0.34), rise * 1.7
+				for kk = 0, 1 do
+					local tt = t + seg.seed
+					local gx = cxs + math.sin(tt * (0.45 + kk * 0.17) + kk * 2.6) * segW * 0.28
+					local ga = 85 * (0.75 + 0.25 * math.sin(tt * (1.1 + kk * 0.4) + kk)) * self.Rise
+					surface.SetDrawColor(seg.color.r, seg.color.g, seg.color.b, ga)
+					surface.DrawTexturedRect(gx - gw / 2, bh - gh / 2, gw, gh)
+				end
+			end
+		end
+	end
+	return strip
+end
+
 local function ShowSummary(featured, winnerTeam, traitors)
+	RS_Lamp.Built = false -- redraw the lamp gradients for each summary (render targets can lose their contents)
 	if IsRTVActive() then return end
 
 	if IsValid(RS_Container) then RS_Container:Remove() end
@@ -1837,13 +2044,27 @@ local function ShowSummary(featured, winnerTeam, traitors)
 			end
 		end
 
-		local gap = math.floor(sw * 0.02)
-		local totalW = -gap
-		for _, b in ipairs(built) do totalW = totalW + b.w + gap end
-		local x = math.floor((sw - totalW) / 2)
+		-- side by side, bands lined up along the bottom. the main MVP is always in the middle of
+		-- the screen, slot 2 to its left and slot 3 to its right (even if one of them is missing)
+		local mainW = math.floor(sw * RS_CARD_MAIN_W)
+		local mainX = math.floor((sw - mainW) / 2)
+		local bySlot = {}
+		for _, b in ipairs(built) do bySlot[b.slot] = b end
+
+		-- every band appears at the same moment: when the last card reveals
+		local lastReveal = 0
+		for i, b in ipairs(built) do
+			lastReveal = math.max(lastReveal, (b.slot == 1 and 0.75 or 0.3 * (i - 1)) + 0.8)
+		end
+		RS_BuildBandStrip(container, bySlot, mainX, mainW, CurTime() + lastReveal)
+
 		for i, b in ipairs(built) do
 			local card = b.card
-			local y = sh - b.h - math.floor(sh * 0.025)
+			local x
+			if b.slot == 1 then x = mainX
+			elseif b.slot == 2 then x = mainX - b.w
+			else x = mainX + mainW end
+			local y = sh - b.h - math.floor(sh * RS_CARD_BOTTOM)
 			card:SetPos(x, y)
 			card.OffX, card.OffY = x, sh
 			local lightDelay = b.slot == 1 and 0.75 or 0.3 * (i - 1)
@@ -1860,7 +2081,6 @@ local function ShowSummary(featured, winnerTeam, traitors)
 				if IsValid(card.RSTitle) then card.RSTitle:AlphaTo(255, 0.35, 0) end
 				if IsValid(card.RSInfoWrap) then card.RSInfoWrap:AlphaTo(255, 0.35, 0.1) end
 			end)
-			x = x + b.w + gap
 		end
 		surface.PlaySound("ui/rem_success.wav")
 	end)
@@ -2222,7 +2442,7 @@ local function RSH_PaintCard(pnl, w, h)
 	local rows = pnl.Rows or {}
 	local startY = by + box + RSH_Unit(16)
 	local avail = h - startY - pad
-	local rowH = math.min(RSH_Unit(30), avail / math.max(1, #rows))
+	local rowH = math.min(pnl.MaxRowH or RSH_Unit(30), avail / math.max(1, #rows))
 	local y = startY
 	surface.SetFont("ZCity_RSH_Tiny")
 	for _, row in ipairs(rows) do
@@ -2415,6 +2635,23 @@ function hg.DrawRoundStats(ParentPanel)
 	Fill()
 end
 
+
+-- a single stats card for the most recent round (used by the ESC menu's side tab)
+function hg.CreateLastRoundCard(parent)
+	RSH_Load()
+	local card = vgui.Create("DPanel", parent)
+	card.EmptyText = "PLAY A ROUND TO SEE YOUR STATS HERE"
+	card.MaxRowH = RSH_Unit(44) -- taller rows so the stats fill the card instead of bunching at the top
+	card.Paint = function(self, w, h)
+		local entry = (hg.RoundStatsHistory or {})[1]
+		if self.Entry ~= entry then
+			self.Entry = entry
+			self.Rows = entry and RSH_Rows(entry) or nil
+		end
+		RSH_PaintCard(self, w, h)
+	end
+	return card
+end
 
 net.Receive("rem_roundsummary", function()
 	local count = net.ReadUInt(4)

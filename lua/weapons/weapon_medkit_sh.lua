@@ -1,7 +1,7 @@
 if SERVER then AddCSLuaFile() end
 SWEP.Base = "weapon_bandage_sh"
 SWEP.BandageTPIK = false
-SWEP.PrintName = "Medkit"
+SWEP.PrintName = "Medkit Container"
 SWEP.Instructions = "A military medkit. Holds medical supplies - take them out or pack your own in."
 SWEP.HowToUseInstructions = "LMB / RMB - open the medkit"
 SWEP.Category = "ZCity Medicine"

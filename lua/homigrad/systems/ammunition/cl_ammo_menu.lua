@@ -248,9 +248,7 @@
 		mp.Dragging = false
 
 		local ent = mp.Entity
-		if IsValid(ent) then
-			ent.GetPlayerColor = function() return IsValid(ply) and ply:GetPlayerColor() or Vector(1, 1, 1) end
-		end
+		if IsValid(ent) and hg.SetupPreviewModel then hg.SetupPreviewModel(ent, ply) end
 
 		function mp:LayoutEntity(e)
 			if not IsValid(ply) then return end
@@ -260,10 +258,11 @@
 				e:SetBodygroup(i, ply:GetBodygroup(i))
 			end
 			for i = 0, 31 do
-				local sm = ply:GetSubMaterial(i)
-				if sm and sm ~= "" then e:SetSubMaterial(i, sm) end
+				e:SetSubMaterial(i, ply:GetSubMaterial(i) or "")
 			end
-			e.GetPlayerColor = function() return IsValid(ply) and ply:GetPlayerColor() or Vector(1, 1, 1) end
+			-- clothing colors, masks and accessory colors come from the real player
+			-- (see hg.SetupPreviewModel in new_appearance/cl_init.lua)
+			if hg.SetupPreviewModel then hg.SetupPreviewModel(e, ply) end
 			if self.Gesture then
 				-- playing the drop gesture
 				if not self.Gesture.started then
@@ -310,6 +309,8 @@
 		end
 
 		function mp:OnRemove()
+			-- this replaces DModelPanel's own OnRemove, so the preview model has to be removed here too
+			if IsValid(self.Entity) then self.Entity:Remove() end
 			for _, m in pairs(self.ArmorModels or {}) do
 				if IsValid(m) then m:Remove() end
 			end

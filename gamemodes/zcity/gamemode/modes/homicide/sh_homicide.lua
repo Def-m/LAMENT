@@ -131,7 +131,7 @@ local TraitorAmmoUpgrades = {
 	["weapon_taser_ammo"] = {weapon = "weapon_taser"},
 	["weapon_revolver357_ammo"] = {weapon = "weapon_revolver357"},
 	["weapon_draco_ammo"] = {weapon = "weapon_draco"},
-	["weapon_dracovska_ammo"] = {weapon = "weapon_dracovska", exact = true}, -- exactly one spare magazine (its mag holds 10)
+	["weapon_dracovska_ammo"] = {weapon = "weapon_dracovska", exact = true}, -- exactly one spare magazine
 	["weapon_hg_bow_ammo"] = {weapon = "weapon_hg_bow", ammo = 5, ammoName = "Arrow"},
 	["weapon_hg_crossbow_ammo"] = {weapon = "weapon_hg_crossbow", ammo = 4},
 	["weapon_zoraki_ammo"] = {weapon = "weapon_zoraki"},
@@ -297,6 +297,31 @@ local function ApplyTraitorLoadout(ply)
 	local hasTaser = false
 	local loadoutAttachments = {}
 
+	-- weapons that should start with exactly their loaded magazine (+1 spare if the ammo addon was
+	-- bought). other code can still add ammo when the gun is handed out, so the final amount is set
+	-- once everything else is done instead of only adding to it
+	local exactAmmoSpares = {}
+	for _, wep in pairs(weaponsList) do
+		local upgrade = TraitorAmmoUpgrades[wep]
+		if istable(upgrade) and upgrade.exact then exactAmmoSpares[upgrade.weapon] = 1 end
+	end
+	for wep in pairs(NoReserveAmmo) do
+		if table.HasValue(weaponsList, wep) then exactAmmoSpares[wep] = exactAmmoSpares[wep] or 0 end
+	end
+	for wepClass, spares in pairs(exactAmmoSpares) do
+		timer.Simple(2, function()
+			if not IsValid(ply) or not ply:HasWeapon(wepClass) then return end
+			local weapon = ply:GetWeapon(wepClass)
+			if not IsValid(weapon) then return end
+			local ammoType = weapon:GetPrimaryAmmoType()
+			local magSize = (weapon.Primary and tonumber(weapon.Primary.ClipSize)) or weapon:GetMaxClip1()
+			if not magSize or magSize <= 0 then magSize = weapon:GetMaxClip1() end
+			if ammoType < 0 or not magSize or magSize <= 0 then return end
+			weapon:SetClip1(magSize)               -- one loaded magazine
+			ply:SetAmmo(magSize * spares, ammoType) -- plus exactly the spares paid for
+		end)
+	end
+
 	for _, wep in pairs(weaponsList) do
 		local attachmentParent, attachmentId = ParseLoadoutAttachmentId(wep)
 		if attachmentParent and attachmentId then
@@ -311,6 +336,7 @@ local function ApplyTraitorLoadout(ply)
 			table.insert(loadoutAttachments[attachmentAddon.weapon], attachmentAddon.attachment)
 		elseif TraitorAmmoUpgrades[wep] then
 			local upgrade = TraitorAmmoUpgrades[wep]
+			if istable(upgrade) and upgrade.exact then continue end -- handled by exactAmmoSpares above
 			timer.Simple(1.5, function()
 				if not IsValid(ply) or not ply:HasWeapon(upgrade.weapon) then return end
 				local weapon = ply:GetWeapon(upgrade.weapon)

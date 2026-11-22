@@ -223,6 +223,57 @@ function hg.PaintMenuBackground(w, h, mul)
     surface.DrawTexturedRect(0, 0, w, h)
 end
 
+-- ESC menu backdrop: the live game behind the menu, blurred and in black & white
+local menu_bg_blur = Material("pp/blurscreen")
+local menu_bg_mono = Material("pp/colour")
+-- blurTop / blurBottom: only blur between these screen heights (the bars stay sharp)
+function hg.PaintMenuBackgroundMono(w, h, mul, blurTop, blurBottom, colourAmt)
+    mul = mul or 1
+    if mul <= 0 then return end
+    local x, y = 0, 0
+    surface.SetDrawColor(255, 255, 255, 255)
+
+    -- blur (a few passes so it stays smooth at higher strengths)
+    blurTop = math.Clamp(math.floor(blurTop or 0), 0, h)
+    blurBottom = math.Clamp(math.ceil(blurBottom or h), 0, h)
+    if blurBottom > blurTop then
+        render.SetScissorRect(0, blurTop, w, blurBottom, true)
+        surface.SetMaterial(menu_bg_blur)
+        for i = 1, 4 do
+            menu_bg_blur:SetFloat("$blur", (i / 4) * 6 * mul)
+            menu_bg_blur:Recompute()
+            render.UpdateScreenEffectTexture()
+            surface.DrawTexturedRect(x, y, ScrW(), ScrH())
+        end
+        render.SetScissorRect(0, 0, 0, 0, false)
+    end
+
+    -- drain the colour out
+    render.UpdateScreenEffectTexture()
+    menu_bg_mono:SetTexture("$fbtexture", render.GetScreenEffectTexture())
+    menu_bg_mono:SetFloat("$pp_colour_addr", 0)
+    menu_bg_mono:SetFloat("$pp_colour_addg", 0)
+    menu_bg_mono:SetFloat("$pp_colour_addb", 0)
+    menu_bg_mono:SetFloat("$pp_colour_brightness", -0.02 * mul)
+    menu_bg_mono:SetFloat("$pp_colour_contrast", 1 - 0.1 * mul)
+    menu_bg_mono:SetFloat("$pp_colour_colour", colourAmt or 0) -- 0 = black & white
+    menu_bg_mono:SetFloat("$pp_colour_mulr", 0)
+    menu_bg_mono:SetFloat("$pp_colour_mulg", 0)
+    menu_bg_mono:SetFloat("$pp_colour_mulb", 0)
+    surface.SetMaterial(menu_bg_mono)
+    surface.DrawTexturedRect(x, y, ScrW(), ScrH())
+
+    -- darken a bit and keep the same soft side gradients so the text stays readable
+    surface.SetDrawColor(0, 0, 0, 110 * mul)
+    surface.DrawRect(0, 0, w, h)
+    surface.SetDrawColor(80, 80, 80, 15 * mul)
+    surface.SetTexture(menu_bg_grad_r)
+    surface.DrawTexturedRect(0, 0, w, h)
+    surface.SetDrawColor(20, 20, 20, 80 * mul)
+    surface.SetTexture(menu_bg_grad_l)
+    surface.DrawTexturedRect(0, 0, w, h)
+end
+
 local splasheh = {
     'LIKE HOMICIDED',
     'PLUV PLUV PLUVISKI',
@@ -693,6 +744,24 @@ function PANEL:CreateTopPlayersTicker()
     end)
 end
 
+-- off-screen texture the main menu playermodel is rendered into
+local menuPreviewRT, menuPreviewMat
+local MENU_PREVIEW_RT_SIZE = 2048
+local menuPreviewSolidMat = Material("models/debug/debugwhite")
+local function GetMenuPreviewRT()
+    if not menuPreviewRT then
+        menuPreviewRT = GetRenderTargetEx("lament_menu_preview_rt", MENU_PREVIEW_RT_SIZE, MENU_PREVIEW_RT_SIZE,
+            RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_SEPARATE, bit.bor(2, 256), 0, IMAGE_FORMAT_RGBA8888)
+        menuPreviewMat = CreateMaterial("lament_menu_preview_mat", "UnlitGeneric", {
+            ["$basetexture"] = menuPreviewRT:GetName(),
+            ["$translucent"] = 1,
+            ["$vertexalpha"] = 1,
+            ["$vertexcolor"] = 1,
+        })
+    end
+    return menuPreviewRT, menuPreviewMat, MENU_PREVIEW_RT_SIZE
+end
+
 function PANEL:CreateAppearancePreview()
     local tbl, tMdl = self:GetPreviewAppearance()
     if not tbl or not tMdl then return end
@@ -711,12 +780,43 @@ function PANEL:CreateAppearancePreview()
     local holder = self.previewHolder
     holder:SetSize(holderW, holderH)
     holder:SetPos(targetX, ScrH())
-    holder:SetAlpha(0)
+    holder:SetAlpha(255) -- no fade-in, he just slides up into place
     holder.TargetX = targetX
     holder.TargetY = targetY
-    holder.ClosedY = ScrH()
+    holder.ClosedY = ScrH() + MenuUnit(120) -- far enough below the screen that nothing peeks in
     holder:SetMouseInputEnabled(false)
     holder.Paint = function() end
+    -- the background playermodel is shown in black & white like the backdrop
+    -- (not while the appearance editor has it on top, colours matter there)
+    local menuSelf = self
+    local monoMat = Material("pp/colour")
+    holder.PaintOver = function(this, w, h)
+        if IsValid(menuSelf) and this:GetParent() == menuSelf then return end
+        -- the model is drawn without clipping, so it can stick out of this panel: desaturate the
+        -- whole screen drawn so far (only the backdrop + the model sit under this layer), at full
+        -- strength even while the panel is still fading in
+        local sx, sy = this:LocalToScreen(0, 0)
+        local sw, sh = ScrW(), ScrH()
+        local oldAlpha = surface.GetAlphaMultiplier()
+        surface.SetAlphaMultiplier(1)
+        DisableClipping(true)
+        render.UpdateScreenEffectTexture()
+        monoMat:SetTexture("$fbtexture", render.GetScreenEffectTexture())
+        monoMat:SetFloat("$pp_colour_addr", 0)
+        monoMat:SetFloat("$pp_colour_addg", 0)
+        monoMat:SetFloat("$pp_colour_addb", 0)
+        monoMat:SetFloat("$pp_colour_brightness", 0)
+        monoMat:SetFloat("$pp_colour_contrast", 1)
+        monoMat:SetFloat("$pp_colour_colour", (IsValid(menuSelf) and menuSelf.MenuClosing) and (1 - menuSelf:GetAlpha() / 255) or 0)
+        monoMat:SetFloat("$pp_colour_mulr", 0)
+        monoMat:SetFloat("$pp_colour_mulg", 0)
+        monoMat:SetFloat("$pp_colour_mulb", 0)
+        surface.SetDrawColor(255, 255, 255, 255)
+        surface.SetMaterial(monoMat)
+        surface.DrawTexturedRect(-sx, -sy, sw, sh)
+        DisableClipping(false)
+        surface.SetAlphaMultiplier(oldAlpha)
+    end
     holder.Think = function(this)
         if not this.AppearanceFollow then return end
         local x, y = this:GetPos()
@@ -758,9 +858,70 @@ function PANEL:CreateAppearancePreview()
             oldPaint(pnl, w, h)
             return
         end
+        -- render the model into an off-screen texture that is bigger than the box (same
+        -- framing, matching wider FOV), then draw that texture over the box. Nothing is cut at
+        -- the box edges, and since the 3D view never touches the screen edges the model can't
+        -- get squeezed while the box slides in or sits partly off screen
+        local ent = pnl.Entity
+        if not IsValid(ent) then return end
+        local rt, rtMat, rtSize = GetMenuPreviewRT()
+        local pad = 1.6
+        local vw, vh = w * pad, h * pad
+        local fit = math.min(1, rtSize / vw, rtSize / vh)
+        local rw, rh = math.floor(vw * fit), math.floor(vh * fit)
+
+        pnl:LayoutEntity(ent)
+        local ang = pnl.aLookAngle or (pnl.vLookatPos - pnl.vCamPos):Angle()
+        local fov = math.deg(2 * math.atan(math.tan(math.rad(pnl.fFOV) * 0.5) * pad))
+
+        render.PushRenderTarget(rt)
+        render.Clear(0, 0, 0, 0, true, true)
+        cam.Start3D(pnl.vCamPos, ang, fov, 0, 0, rw, rh, 5, pnl.FarZ)
+            render.SuppressEngineLighting(true)
+            render.SetLightingOrigin(ent:GetPos())
+            local amb = pnl.colAmbientLight or color_black
+            render.ResetModelLighting(amb.r / 255, amb.g / 255, amb.b / 255)
+            local col = pnl.colColor or color_white
+            render.SetColorModulation(col.r / 255, col.g / 255, col.b / 255)
+            render.SetBlend(col.a / 255)
+            for i = 0, 6 do
+                local light = pnl.DirectionalLight and pnl.DirectionalLight[i]
+                if light then
+                    render.SetModelLighting(i, light.r / 255, light.g / 255, light.b / 255)
+                end
+            end
+            -- Source normally writes depth into the alpha channel, which made him see-through
+            render.SetWriteDepthToDestAlpha(false)
+            local drew = pnl:PreDrawModel(ent) ~= false
+            if drew then
+                ent:DrawModel()
+                pnl:PostDrawModel(ent)
+
+                -- second pass: stamp full alpha wherever the model (and its accessories) is,
+                -- without touching the colours, so he comes out completely solid
+                render.OverrideColorWriteEnable(true, false)
+                render.OverrideAlphaWriteEnable(true, true)
+                render.MaterialOverride(menuPreviewSolidMat)
+                render.SetBlend(1)
+                ent:DrawModel()
+                pnl:PostDrawModel(ent)
+                render.MaterialOverride(nil)
+                render.OverrideAlphaWriteEnable(false)
+                render.OverrideColorWriteEnable(false)
+            end
+            render.SetWriteDepthToDestAlpha(true)
+            render.SetBlend(1)
+            render.SetColorModulation(1, 1, 1)
+            render.SuppressEngineLighting(false)
+        cam.End3D()
+        render.PopRenderTarget()
+
         DisableClipping(true)
-        oldPaint(pnl, w, h)
+        surface.SetDrawColor(255, 255, 255, 255 * (pnl:GetAlpha() / 255))
+        surface.SetMaterial(rtMat)
+        surface.DrawTexturedRectUV(-(vw - w) * 0.5, -(vh - h) * 0.5, vw, vh, 0, 0, rw / rtSize, rh / rtSize)
         DisableClipping(false)
+        pnl.LastPaint = RealTime()
     end
 
     function preview:LayoutEntity(ent)
@@ -946,7 +1107,6 @@ function PANEL:CreateAppearancePreview()
     timer.Simple(0, function()
         if not IsValid(holder) then return end
         holder:MoveTo(targetX, targetY, appearance_preview.enter_time, 0, appearance_preview.enter_delay)
-        holder:AlphaTo(255, appearance_preview.enter_time * 0.75, appearance_preview.enter_delay)
     end)
 end
 
@@ -981,6 +1141,7 @@ function PANEL:Init()
     self.Buttons = {}
     self:CreateTopBar()
     self:CreateBottomBar()
+    self:CreateLastRoundTab()
     self.panelparrent = vgui.Create("DPanel", self)
     self.panelparrent:SetPos(0, 0)
     self.panelparrent:SetSize(ScrW(), ScrH())
@@ -1010,16 +1171,40 @@ function PANEL:CreateBackgroundLayer()
     local menu = self
     local layer = vgui.Create("DPanel")
     self.BackgroundLayer = layer
+    hg.MenuBackdropOwner = self
     layer:SetPos(0, 0)
     layer:SetSize(ScrW(), ScrH())
     layer:SetMouseInputEnabled(false)
     layer:SetKeyboardInputEnabled(false)
-    layer.Paint = function(this, w, h)
-        if not IsValid(menu) then return end
-        local mul = (menu:GetAlpha() / 255) * (math.Clamp(menu.DisconnectBackgroundAlpha or 255, 0, 255) / 255)
-        hg.PaintMenuBackground(w, h, mul)
-    end
+    -- the blurred backdrop is drawn in PostDrawHUD (before any menu panel), so this layer
+    -- only exists to keep the old panel ordering; it paints nothing itself
+    layer.Paint = function() end
 end
+
+-- draw the backdrop after the HUD but before every vgui panel, so the blur only ever
+-- picks up the game - never the menu or the playermodel
+hook.Add("PostDrawHUD", "ZCity_MenuMonoBackdrop", function()
+    -- the menu that owns the backdrop (still set while it plays its closing animation)
+    local menu = hg.MenuBackdropOwner
+    if not IsValid(menu) or not IsValid(menu.BackgroundLayer) then return end
+    local mul = (menu:GetAlpha() / 255) * (math.Clamp(menu.DisconnectBackgroundAlpha or 255, 0, 255) / 255)
+    if mul <= 0 then return end
+    -- keep the area behind the top and bottom bars unblurred
+    local top, bottom = 0, ScrH()
+    if IsValid(menu.topBar) then
+        local _, by = menu.topBar:LocalToScreen(0, 0)
+        top = math.max(by + menu.topBar:GetTall(), 0)
+    end
+    if IsValid(menu.bottomBar) then
+        local _, by = menu.bottomBar:LocalToScreen(0, 0)
+        bottom = math.min(by, ScrH())
+    end
+    cam.Start2D()
+        -- black & white from the first frame when opening; fades back to colour while closing
+        local colourAmt = menu.MenuClosing and (1 - mul) or 0
+        hg.PaintMenuBackgroundMono(ScrW(), ScrH(), mul, top, bottom, colourAmt)
+    cam.End2D()
+end)
 
 function PANEL:IsPageOpen()
     return IsValid(self.panelparrent) and #self.panelparrent:GetChildren() > 0
@@ -1118,6 +1303,78 @@ local menu_bar_accent = Color(225, 225, 225)
 local menu_bar_text = Color(220, 220, 220)
 local menu_bar_text_idle = Color(188, 188, 188)
 local menu_bar_text_dim = Color(140, 140, 140)
+
+-- slide-out tab on the left with the last round's stats, between the profile card and the
+-- bottom bar. Click the handle to open / close it; the choice is remembered.
+function PANEL:CreateLastRoundTab()
+    if not hg.CreateLastRoundCard then return end
+    local menu = self
+    local top = MenuUnit(menu_profile.top + menu_profile.height + 12)
+    local bottom = ScrH() - MenuUnit(150) - MenuUnit(12)
+    local h = bottom - top
+    if h < MenuUnit(240) then return end
+
+    local drawerW = math.min(MenuUnit(560), math.floor(ScrW() * 0.36))
+    local tabW = MenuUnit(34)
+    local tabH = math.min(MenuUnit(190), h)
+
+    local root = vgui.Create("DPanel", self)
+    self.lastRoundTab = root
+    root:SetSize(drawerW + tabW, h)
+    root:SetPos(-(drawerW + tabW), top)
+    root.Paint = function() end
+    root.OpenFrac = hg.LastRoundTabOpen and 1 or 0
+    root.Appear = 0
+
+    local card = hg.CreateLastRoundCard(root)
+    card:SetPos(0, 0)
+    card:SetSize(drawerW, h)
+
+    local tab = vgui.Create("DButton", root)
+    tab:SetText("")
+    tab:SetPos(drawerW, math.floor((h - tabH) / 2))
+    tab:SetSize(tabW, tabH)
+    tab.Paint = function(this, w, th)
+        this.HoverLerp = LerpFT(0.2, this.HoverLerp or 0, this:IsHovered() and 1 or 0)
+        local hl = this.HoverLerp
+        draw.RoundedBoxEx(3, 0, 0, w, th, hl > 0.5 and menu_bar_btn_hover or menu_bar_btn_bg, false, true, false, true)
+        surface.SetDrawColor(menu_bar_border.r, menu_bar_border.g, menu_bar_border.b, 45 + 100 * hl)
+        surface.DrawOutlinedRect(0, 0, w, th, 1)
+        surface.SetDrawColor(menu_bar_accent.r, menu_bar_accent.g, menu_bar_accent.b, 210 * hl)
+        surface.DrawRect(w - MenuUnit(3), 0, MenuUnit(3), th)
+
+        -- arrow showing which way it will move, then "STATS" stacked down the tab
+        local col = hl > 0.5 and menu_bar_text or menu_bar_text_idle
+        local chars = {hg.LastRoundTabOpen and "<" or ">", "", "S", "T", "A", "T", "S"}
+        surface.SetFont("ZCity_MenuBar_Tiny")
+        local _, ch = surface.GetTextSize("S")
+        local step = ch * 0.95
+        local y = th / 2 - step * (#chars - 1) / 2
+        for _, c in ipairs(chars) do
+            if c ~= "" then draw.SimpleText(c, "ZCity_MenuBar_Tiny", w / 2 - MenuUnit(1), y, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER) end
+            y = y + step
+        end
+    end
+    tab.DoClick = function()
+        hg.LastRoundTabOpen = not hg.LastRoundTabOpen
+        surface.PlaySound(SOUND_MENU_SELECT)
+    end
+    tab.OnCursorEntered = function()
+        surface.PlaySound(SOUND_MENU_HOVER)
+    end
+
+    root.Think = function(this)
+        -- slides in with the bars when the menu opens, back out when it closes
+        local wantAppear = (IsValid(menu) and not menu.MenuClosing) and 1 or 0
+        this.Appear = LerpFT(0.15, this.Appear, wantAppear)
+        this.OpenFrac = LerpFT(0.2, this.OpenFrac, hg.LastRoundTabOpen and 1 or 0)
+        local closedX = -drawerW
+        local hiddenX = -(drawerW + tabW)
+        local restX = Lerp(this.OpenFrac, closedX, 0)
+        local x = Lerp(this.Appear, hiddenX, restX)
+        this:SetPos(math.Round(x), top)
+    end
+end
 
 function PANEL:RunSelect(key)
     local tbl = Selects[key]
@@ -1350,13 +1607,12 @@ function PANEL:Close()
         self.bottomBar:Stop()
         self.bottomBar:MoveTo(0, ScrH(), 0.35, 0, 0.3)
     end
-    if IsValid(self.previewModel) and IsValid(self.previewModel.Entity) then
-        CleanupPreviewAccessories(self.previewModel.Entity)
-    end
+    -- accessories are cleaned up in OnRemove so he keeps them while falling
     if IsValid(self.previewHolder) then
         self.previewHolder.AppearanceFollow = false
-        self.previewHolder:MoveTo(self.previewHolder.TargetX or self.previewHolder:GetX(), self.previewHolder.ClosedY or ScrH(), appearance_preview.exit_time, 0, appearance_preview.exit_delay)
-        self.previewHolder:AlphaTo(0, appearance_preview.exit_time * 0.75, appearance_preview.exit_delay)
+        -- vanish almost instantly, no movement
+        self.previewHolder:Stop()
+        self.previewHolder:AlphaTo(0, 0.1, 0)
     end
     self:AlphaTo(0, appearance_preview.exit_time, 0, function()
         if IsValid(self) then
@@ -1369,6 +1625,9 @@ end
 
 function PANEL:OnRemove()
     StopMainMenuMusic()
+    if IsValid(self.previewModel) and IsValid(self.previewModel.Entity) then
+        CleanupPreviewAccessories(self.previewModel.Entity)
+    end
     if IsValid(self.previewHolder) then self.previewHolder:Remove() end
     if IsValid(self.BackgroundLayer) then self.BackgroundLayer:Remove() end
 end

@@ -8,8 +8,8 @@ local STAGE_1_MAX_DIST    = 120
 local STAGE_1_MIN_HEIGHT  = -20
 local STAGE_1_MAX_HEIGHT  = 0
 local STAGE_1_LOOK_HEIGHT = 15
-local BLACK_FADE_DURATION = 7
-local BLACK_FADE_OUT_DURATION = 2
+local BLACK_FADE_DURATION = 5
+local BLACK_FADE_OUT_DURATION = 0.8
 local REALISH_BLACK_FADE_DURATION = 0.35
 local REALISH_BLACK_FADE_OUT_DURATION = 0.45
 local DEATH_TEXT_FADE_IN  = 1
@@ -790,23 +790,39 @@ local function CinematicDeathBackground()
         local fadeProgress = math.Clamp(stageElapsed / fadeDuration, 0, 1)
         local fadeOutProgress = math.Clamp((stageElapsed - fadeDuration) / fadeOutDuration, 0, 1)
 		local overlayAlpha = realish and math.floor((fadeOutProgress > 0 and 1 - fadeOutProgress or fadeProgress) * 255) or math.floor((1 - fadeOutProgress) * 255)
-        local colorFade = 1 - fadeProgress
-        local col = realish and Color(0, 0, 0) or deathColor
-        surface.SetDrawColor(
-            math.floor(col.r * colorFade),
-            math.floor(col.g * colorFade),
-            math.floor(col.b * colorFade),
-            overlayAlpha
-        )
+
+        if realish then
+            surface.SetDrawColor(0, 0, 0, overlayAlpha)
+            surface.DrawRect(0, 0, sw, sh)
+            return
+        end
+
+        -- monochrome filter: desaturate the scene, darken it toward black over the fade,
+        -- then release back to color as the fade-out finishes
+        local monoStrength = 1 - fadeOutProgress
+        DrawColorModify({
+            ["$pp_colour_addr"]       = 0,
+            ["$pp_colour_addg"]       = 0,
+            ["$pp_colour_addb"]       = 0,
+            ["$pp_colour_brightness"] = 0,
+            ["$pp_colour_contrast"]   = 1 + 0.15 * monoStrength,
+            ["$pp_colour_colour"]     = 1 - monoStrength,
+            ["$pp_colour_mulr"]       = 0,
+            ["$pp_colour_mulg"]       = 0,
+            ["$pp_colour_mulb"]       = 0,
+        })
+
+        local darkAlpha = math.floor(fadeProgress * (1 - fadeOutProgress) * 255)
+        surface.SetDrawColor(0, 0, 0, darkAlpha)
         surface.DrawRect(0, 0, sw, sh)
 
-        if realish then return end
+        local textTopY = math.floor(sh * 0.16)
 
         if not DeathScreenEnabled() then
             local textFadeIn = math.Clamp(stageElapsed / DEATH_TEXT_FADE_IN, 0, 1)
             local textAlpha = math.floor(textFadeIn * overlayAlpha * (1 - fadeProgress))
-            draw.SimpleText(deathMessage.title, "DeathEffect_HG_Large", sw / 2, sh / 2 - 40, Color(0, 0, 0, textAlpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            draw.SimpleText(deathMessage.desc, "DeathEffect_HG_Desc", sw / 2, sh / 2 + 45, Color(0, 0, 0, textAlpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText(deathMessage.title, "DeathEffect_HG_Large", sw / 2, textTopY, Color(235, 235, 235, textAlpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText(deathMessage.desc, "DeathEffect_HG_Desc", sw / 2, textTopY + 85, Color(200, 200, 200, textAlpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             return
         end
 
@@ -832,14 +848,14 @@ local function CinematicDeathBackground()
         local text = deathMessage.title
         local desc = deathMessage.desc
         local slide = 1 - ((1 - textFadeIn) ^ 3)
-        local textX = Lerp(slide, -650, 70) + math.sin(CurTime() * 95) * shake
-        local textY = sh / 2 - 60 + math.cos(CurTime() * 110) * shake
-        draw.SimpleText(text, "DeathEffect_HG_Large", textX, textY, Color(0, 0, 0, textAlpha), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        draw.SimpleText(desc, "DeathEffect_HG_Desc", textX + 6, textY + 85, Color(0, 0, 0, textAlpha), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        local textX = sw / 2 + math.sin(CurTime() * 95) * shake
+        local textY = Lerp(slide, -120, textTopY) + math.cos(CurTime() * 110) * shake
+        draw.SimpleText(text, "DeathEffect_HG_Large", textX, textY, Color(235, 235, 235, textAlpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(desc, "DeathEffect_HG_Desc", textX, textY + 85, Color(200, 200, 200, textAlpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
         local hint = "press [SPACE] or [BACKSPACE] to skip"
         local hintAlpha = math.floor(textFadeIn * overlayAlpha * 0.45)
-        draw.SimpleText(hint, "DeathEffect_Hint", sw / 2, sh - 36, Color(0, 0, 0, hintAlpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(hint, "DeathEffect_Hint", sw / 2, sh - 36, Color(200, 200, 200, hintAlpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 
 end

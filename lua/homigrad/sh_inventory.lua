@@ -16,9 +16,18 @@ hg.TraitorLoot = {
 
 if CLIENT then
 	hook.Add("Player_Death","foundloot",function(ply)
-		if IsValid(ply.FakeRagdoll) then ply.FakeRagdoll.foundloot = table.Copy(ply.foundloot) end
+		-- table.Copy(nil) is nil, which left the ragdoll with no foundloot table (errors in an open loot window)
+		if IsValid(ply.FakeRagdoll) then ply.FakeRagdoll.foundloot = table.Copy(ply.foundloot or {}) end
 		ply.foundloot = {}
 	end)
+
+	-- the loot window's buttons keep running after it opens; the entity can be removed or have its
+	-- foundloot replaced meanwhile, so always read it through this instead of ent.foundloot directly
+	local function LootFound(ent)
+		if not IsValid(ent) then return {} end
+		ent.foundloot = ent.foundloot or {}
+		return ent.foundloot
+	end
 
 	local OpenInv
 	net.Receive("should_open_inv", function()
@@ -410,7 +419,7 @@ if CLIENT then
 			table.sort(keys,function(a,b)
 				local atbl = weapons.Get(a)
 				local wep = atbl and atbl.holsteredBone and not atbl.shouldntDrawHolstered
-				return (ent.foundloot[a] and 1 or 0) > (ent.foundloot[b] and 1 or 0)//(hg.TraitorLoot[a] or 0) < (hg.TraitorLoot[b] or (wep and 1 or 0) or 0)
+				return (LootFound(ent)[a] and 1 or 0) > (LootFound(ent)[b] and 1 or 0)//(hg.TraitorLoot[a] or 0) < (hg.TraitorLoot[b] or (wep and 1 or 0) or 0)
 			end)
 			
 			for k, i in ipairs(keys) do
@@ -445,12 +454,12 @@ if CLIENT then
 				button:SetSize(blockW * cell + (blockW - 1) * gap, blockH * cell + (blockH - 1) * gap)
 				button.RevealTime = math.Clamp(0.45 + revealWeight * 0.24, 0.65, 4)
 				button.Think = function(self)
-					if ent.foundloot[i] then return end
+					if LootFound(ent)[i] then return end
 					if self:IsHovered() and input.IsMouseDown(MOUSE_LEFT) then
 						self.RevealStart = self.RevealStart or CurTime()
 						self.RevealProgress = math.Clamp((CurTime() - self.RevealStart) / self.RevealTime, 0, 1)
 						if self.RevealProgress >= 1 then
-							ent.foundloot[i] = true
+							LootFound(ent)[i] = true
 							self.HoldLock = true
 							surface.PlaySound("arc9_eft_shared/generic_mag_pouch_in" .. math.random(7) .. ".ogg")
 						end
@@ -463,7 +472,7 @@ if CLIENT then
 				
 				button.DoClick = function()
 					if button.HoldLock then button.HoldLock = nil return end
-					if not ent.foundloot[i] then return end
+					if not LootFound(ent)[i] then return end
 					if cooldown > CurTime() then return end
 
 					cooldown = CurTime() + 0.5
@@ -488,7 +497,7 @@ if CLIENT then
 				end
 
 				button.DoRightClick = function()
-					if not ent.foundloot[i] then return end
+					if not LootFound(ent)[i] then return end
 					if cooldown > CurTime() then return end
 
 					cooldown = CurTime() + 0.5
@@ -518,7 +527,7 @@ if CLIENT then
 				local name = nameThings(i, thing)
 				button.col1 = 100
 				button.Paint = function(self, w, h)
-					local found = ent.foundloot[i]
+					local found = LootFound(ent)[i]
 					button.col1 = Lerp(0.1, button.col1, button:IsHovered() and 180 or 100)
 					if button:IsHovered() then
 						button.SoundKD = button.SoundKD or 0

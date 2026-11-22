@@ -5,14 +5,48 @@ local ended
 
 local MusicVolume = GetConVar("snd_musicvolume")
 
+-- every team's role screen lasts as long as the Trinity intro track, so both teams finish together
+-- (10 seconds until the track's length is known)
+local INTRO_FALLBACK = 7
+local INTRO_MAX = 7 -- the role screen never lasts longer than this (seconds); the music fades out here
+local introEnd
+
+local function IntroDuration()
+	if introEnd and zb.ROUND_START then
+		return math.max(introEnd - zb.ROUND_START, 1)
+	end
+	return INTRO_FALLBACK
+end
+
+local INTRO_TRACKS = {
+	[0] = "sound/zoo.MP3",
+	[1] = "sound/trinity.MP3",
+}
+local TIMING_TRACK = INTRO_TRACKS[1] -- the track that decides when the role screen ends
+
 net.Receive("gwars_start", function()
 	local teamID = LocalPlayer():Team()
-	if teamID == 0 then
-		surface.PlaySound("zoo.MP3")
-	elseif teamID == 1 then
-		surface.PlaySound("trinity.MP3")
-	else
-		surface.PlaySound("zbattle/nigshit.mp3")
+	introEnd = nil
+	if IsValid(GWARS_IntroStation) then GWARS_IntroStation:Stop() end
+	local startedAt = CurTime()
+	local track = INTRO_TRACKS[teamID] or "sound/zbattle/nigshit.mp3"
+	sound.PlayFile(track, "noblock", function(station)
+		if not IsValid(station) then return end
+		GWARS_IntroStation = station -- keep a reference so it isn't garbage collected mid-song
+		station:Play()
+		if track == TIMING_TRACK then
+			local len = station:GetLength()
+			if len and len > 0 then introEnd = startedAt + math.min(len, INTRO_MAX) end
+		end
+	end)
+	if track ~= TIMING_TRACK then
+		-- open the Trinity track without playing it, just to read its length
+		sound.PlayFile(TIMING_TRACK, "noplay", function(station)
+			if not IsValid(station) then return end
+			local len = station:GetLength()
+			if len and len > 0 then introEnd = startedAt + math.min(len, INTRO_MAX) end
+			station:Stop()
+		end)
 	end
 	zb.RemoveFade()
 	ended = nil
@@ -55,7 +89,7 @@ local teams = {
 local lerpsnd = 0.3
 function MODE:RenderScreenspaceEffects()
 	zb.RemoveFade()
-	hg.RoundStart.Fade({startTime = zb.ROUND_START, duration = 10})
+	hg.RoundStart.Fade({startTime = zb.ROUND_START, duration = IntroDuration()})
 end
 
 surface.CreateFont("timer_Font2", {
@@ -67,11 +101,25 @@ surface.CreateFont("timer_Font2", {
 	italic = false
 })
 
+local INTRO_MUSIC_FADE = 0.5 -- seconds the intro track takes to fade out once the role screen ends
+
 function MODE:HUDPaint()
+	-- intro track (e.g. zoo.MP3 running longer than the Trinity track): fade it out when the role screen ends
+	if introEnd and IsValid(GWARS_IntroStation) and CurTime() > introEnd then
+		local vol = 1 - (CurTime() - introEnd) / INTRO_MUSIC_FADE
+		if vol <= 0 then
+			GWARS_IntroStation:Stop()
+			GWARS_IntroStation = nil
+		else
+			GWARS_IntroStation:SetVolume(vol)
+		end
+	end
+
 	//if !lply.organism or !lply.organism.fear then return end
 
+	local introDur = IntroDuration()
 	local timeBeforeSWAT = (zb.ROUND_START - CurTime() + 120)
-	if timeBeforeSWAT > 0 and zb.ROUND_START + 10.5 < CurTime() then
+	if timeBeforeSWAT > 0 and zb.ROUND_START + introDur + 0.5 < CurTime() then
 		local time = string.FormattedTime(timeBeforeSWAT, "%02i:%02i:%02i")
 		local text = "00:00:00"
 		surface.SetFont("timer_Font2")
@@ -87,10 +135,10 @@ function MODE:HUDPaint()
 		//draw.SimpleText(time, "timer_Font2", sw * 0.36, sh * 0.05, Color(255, 255, 255, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 
-	if zb.ROUND_START + 8 < CurTime() then
+	if zb.ROUND_START + introDur - 2 < CurTime() then
 		lerpsnd = LerpFT(0.01, lerpsnd, !ended and (lply:Alive() and lply.organism and !lply.organism.otrub and lply.organism.fear and math.Clamp(lply.organism.fear + 0.3 + (timeBeforeSWAT <= 0 and 2 or 0), 0, 1) or 0.3) or 0)
 		
-		if zb.ROUND_START + 12 < CurTime() then
+		if zb.ROUND_START + introDur + 2 < CurTime() then
 			if IsValid(GWARS_LoopStation) then
 				GWARS_LoopStation:SetVolume(lerpsnd * MusicVolume:GetFloat())
 				GWARS_LoopStation:Play()
@@ -117,12 +165,12 @@ function MODE:HUDPaint()
 		end
 	end
 
-	if zb.ROUND_START + 10 < CurTime() then return end
+	if zb.ROUND_START + introDur < CurTime() then return end
 
 	local info = teams[lply:Team()]
 	if not info then return end
 
-	local fade = math.Clamp(zb.ROUND_START + 10 - CurTime(), 0, 1)
+	local fade = math.Clamp(zb.ROUND_START + introDur - CurTime(), 0, 1)
 
 	hg.RoundStart.DrawTitle({
 		header = "Gang Wars",
@@ -132,7 +180,7 @@ function MODE:HUDPaint()
 		},
 		objective = info.objective,
 		color = info.color1
-	}, {startTime = zb.ROUND_START, duration = 10})
+	}, {startTime = zb.ROUND_START, duration = introDur})
 
 	if hg.PluvTown.Active then
 		surface.SetMaterial(hg.PluvTown.PluvMadness)

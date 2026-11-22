@@ -30,21 +30,36 @@ local function GiveLessLethal(ply, extraClips)
 		return taser
 	end
 
-	local shotgun = ply:Give("weapon_remington870")
+	-- the engine works out a weapon's ammo type (what reloading takes from your reserve) when it
+	-- spawns, so switching Primary.Ammo afterwards changed the damage but reloading still looked for
+	-- buckshot. create it already set to beanbags instead, then hand it to the player.
+	local shotgun = ents.Create("weapon_remington870")
 	if not IsValid(shotgun) then return end
+	shotgun.Primary = table.Copy(shotgun.Primary) -- this gun's own copy, so other Remingtons stay buckshot
+	shotgun.Primary.Ammo = "12/70 beanbag"
+	shotgun:SetPos(ply:GetPos() + Vector(0, 0, 40))
+	shotgun:Spawn()
 
 	local inv = ply:GetNetVar("Inventory", {}) or {}
 	inv["Weapons"] = inv["Weapons"] or {}
 	inv["Weapons"]["hg_sling"] = true
 	ply:SetNetVar("Inventory", inv)
 
-	-- the weapon resets itself to buckshot 0.1s after init, so switch after that
+	ply.force_pickup = true
+	ply:PickupWeapon(shotgun)
+	ply.force_pickup = nil
+	if not IsValid(shotgun) or shotgun:GetOwner() ~= ply then
+		if IsValid(shotgun) then shotgun:Remove() end
+		return
+	end
+
+	-- the base weapon resets itself to its first ammo type 0.1s after init, so (re)apply beanbag stats
+	-- after that: damage, penetration, the ammo menu's list of types
 	timer.Simple(0.3, function()
 		if not IsValid(shotgun) then return end
+		shotgun.AmmoTypes = shotgun.AmmoTypes2 and shotgun.AmmoTypes2["12/70 gauge"]
 		if shotgun.ApplyAmmoChanges and shotgun.AmmoTypes then
 			shotgun:ApplyAmmoChanges(2) -- AmmoTypes2["12/70 gauge"][2] = "12/70 beanbag"
-		else
-			shotgun.Primary.Ammo = "12/70 beanbag"
 		end
 		shotgun:SetClip1(shotgun:GetMaxClip1())
 		if IsValid(ply) then

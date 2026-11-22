@@ -1,6 +1,6 @@
 -- Round commence screen.
 --   left  : MODE NAME / sub-mode, then the role reveal, occupation, extra lines and objective (one after another)
---   right : your character, a black shadow until the role is revealed, then lit up doing a role pose
+--   right : your character, hidden until the role is revealed, then lit up doing a role pose
 --   end   : white "wake up" flash that fades into the game (like arriving on the train in HL2)
 --
 -- Modes call hg.RoundIntro.Sync(info) every frame while their intro is running:
@@ -137,7 +137,36 @@ local function DrawArmorOn(mp, ent, ply)
 	end
 end
 
--- weapons you're carrying but not holding, in their holstered spot (homigrad weapons only)
+-- weapons you're carrying but not holding, in their holstered spot (homigrad weapons only).
+-- built the way the weapon builds its own world model (SWEP:CreateWorldModel): "fake" gun models
+-- are animated, so they need their idle sequence and bone tweaks or they show up mangled. when the
+-- weapon already has a world model in the world, its pose/bones/bodygroups are copied straight over.
+local function SetupHolsterModel(m, wep)
+	for i = 0, 6 do m:SetBodygroup(i, wep:GetBodygroup(i)) end
+	if wep.WorldModelFake then
+		if wep.FakeScale then m:SetModelScale(wep.FakeScale, 0) end
+		if wep.FakeBodyGroups then m:SetBodyGroups(wep.FakeBodyGroups) end
+		local idle = wep.AnimList and wep.AnimList["idle"]
+		local seq = isstring(idle) and m:LookupSequence(idle) or (isnumber(idle) and idle) or -1
+		if seq and seq >= 0 then m:ResetSequence(seq) m:SetCycle(0) end
+	end
+	if wep.MagIndex then m:ManipulateBoneScale(wep.MagIndex, vector_origin) end
+end
+
+local function CopyWorldModelState(m, src)
+	if m:GetModel() ~= src:GetModel() then return end
+	m:SetSkin(src:GetSkin())
+	m:SetModelScale(src:GetModelScale(), 0)
+	for i = 0, src:GetNumBodyGroups() - 1 do m:SetBodygroup(i, src:GetBodygroup(i)) end
+	for i = 0, src:GetBoneCount() - 1 do
+		m:ManipulateBoneScale(i, src:GetManipulateBoneScale(i))
+		m:ManipulateBonePosition(i, src:GetManipulateBonePosition(i))
+		m:ManipulateBoneAngles(i, src:GetManipulateBoneAngles(i))
+	end
+	if src:GetSequence() ~= m:GetSequence() then m:ResetSequence(src:GetSequence()) end
+	m:SetCycle(src:GetCycle())
+end
+
 local function DrawHolsteredOn(mp, ent, ply)
 	if not IsValid(ply) then return end
 	mp.HolsterModels = mp.HolsterModels or {}
@@ -156,24 +185,26 @@ local function DrawHolsteredOn(mp, ent, ply)
 			m = ClientsideModel(path, RENDERGROUP_OPAQUE)
 			if not IsValid(m) then continue end
 			m:SetNoDraw(true)
-			if wep.WorldModelFake then
-				if wep.FakeScale then m:SetModelScale(wep.FakeScale, 0) end
-				if wep.FakeBodyGroups then m:SetBodyGroups(wep.FakeBodyGroups) end
-			end
-			for i = 0, 6 do m:SetBodygroup(i, wep:GetBodygroup(i)) end
+			SetupHolsterModel(m, wep)
 			mp.HolsterModels[cls] = m
 		end
+		local src = wep.worldModel
+		if IsValid(src) then CopyWorldModelState(m, src) end
 
 		local bone = ent:LookupBone(wep.holsteredBone)
 		local matrix = bone and ent:GetBoneMatrix(bone)
 		if matrix then
+			-- same transform chain as SWEP:WorldModel_Transform_Holstered (minus the walking sway)
 			local hp, ha = LocalToWorld(wep.holsteredPos or vector_origin, wep.holsteredAng or angle_zero, matrix:GetTranslation(), matrix:GetAngles())
 			local pos, ang = LocalToWorld(wep.WorldPos or vector_origin, wep.WorldAng or angle_zero, hp, ha)
-			if wep.WorldModelFake and wep.FakePos then
-				pos, ang = LocalToWorld(wep.FakePos, wep.FakeAng or angle_zero, pos, ang)
+			if wep.WorldModelFake then
+				pos, ang = LocalToWorld(wep.FakePos or vector_origin, wep.FakeAng or angle_zero, pos, ang)
 			end
+			m:SetPos(pos)
+			m:SetAngles(ang)
 			m:SetRenderOrigin(pos)
 			m:SetRenderAngles(ang)
+			m:SetupBones()
 			m:DrawModel()
 		end
 	end
@@ -210,10 +241,11 @@ local function BuildCharacter(parent, ply)
 			e:SetSkin(ply:GetSkin())
 			for i = 0, (ply:GetNumBodyGroups() or 1) - 1 do e:SetBodygroup(i, ply:GetBodygroup(i)) end
 			for i = 0, 31 do
-				local sm = ply:GetSubMaterial(i)
-				if sm and sm ~= "" then e:SetSubMaterial(i, sm) end
+				e:SetSubMaterial(i, ply:GetSubMaterial(i) or "")
 			end
-			e.GetPlayerColor = function() return IsValid(ply) and ply:GetPlayerColor() or Vector(1, 1, 1) end
+			-- clothing colors, masks and accessory colors come from the real player
+			-- (see hg.SetupPreviewModel in new_appearance/cl_init.lua)
+			if hg.SetupPreviewModel then hg.SetupPreviewModel(e, ply) end
 		end
 
 		if not self.SeqApplied then
@@ -257,24 +289,18 @@ local function BuildCharacter(parent, ply)
 		self:SetDirectionalLight(BOX_BACK, Color(60 * f, 60 * f, 70 * f))
 	end
 
+	-- the character isn't drawn at all until the reveal (bones still update, so the pose is ready)
 	function mp:PreDrawModel(e)
-		if self.Lit <= 0.01 then
-			render.SuppressEngineLighting(true)
-			render.SetColorModulation(0, 0, 0)
-		end
+		if self.Lit <= 0.01 then return false end
 	end
 
 	function mp:PostDrawModel(e)
-		-- armor + holstered weapons (still black while the character is a shadow)
+		-- armor + holstered weapons
 		if self.Lit > 0.01 then
 			DrawArmorOn(self, e, ply)
 			DrawHolsteredOn(self, e, ply)
 		end
 
-		if self.Lit <= 0.01 then
-			render.SetColorModulation(1, 1, 1)
-			render.SuppressEngineLighting(false)
-		end
 		-- accessories
 		local acc = IsValid(ply) and ply.GetNetVar and ply:GetNetVar("Accessories")
 		if self.Lit > 0.01 and istable(acc) and hg.Accessories and DrawAccesories then
@@ -286,6 +312,9 @@ local function BuildCharacter(parent, ply)
 	end
 
 	function mp:OnRemove()
+		-- this replaces DModelPanel's own OnRemove, so the preview model has to be removed here too
+		-- (its accessory models are cleaned up through their CallOnRemove when it goes)
+		if IsValid(self.Entity) then self.Entity:Remove() end
 		if IsValid(self.Gun) then self.Gun:Remove() end
 		for _, m in pairs(self.ArmorModels or {}) do if IsValid(m) then m:Remove() end end
 		for _, m in pairs(self.HolsterModels or {}) do if IsValid(m) then m:Remove() end end
@@ -337,6 +366,58 @@ local function DrawWrapped(text, font, x, y, maxW, col, a, typed, lineH)
 	return #lines * lineH
 end
 
+------------------------------------------------------------------------
+-- glow texture: a real radial gradient, drawn once into a render target
+-- brightness follows (1 - r^2)^2, so it is brightest in the middle and fades out to
+-- nothing at the edge with no rim. the material is additive, so tinting it with the
+-- role color over the black background gives a gradient in exactly that color.
+------------------------------------------------------------------------
+local GLOW_TEX_SIZE = 256
+local GLOW_RINGS = 256
+
+local function BuildGlowTexture()
+	RI.GlowRT = RI.GlowRT or GetRenderTargetEx("lament_roundintro_glow", GLOW_TEX_SIZE, GLOW_TEX_SIZE,
+		RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 4 + 8, 0, IMAGE_FORMAT_RGBA8888) -- clamp S/T
+
+	render.PushRenderTarget(RI.GlowRT)
+	render.OverrideAlphaWriteEnable(true, true)
+	render.Clear(0, 0, 0, 255, true, true)
+	cam.Start2D()
+		draw.NoTexture()
+		local c = GLOW_TEX_SIZE / 2
+		for i = GLOW_RINGS, 1, -1 do -- outside in, each ring overwrites the one before
+			local r = i / GLOW_RINGS
+			local v = math.Round(255 * (1 - r * r) ^ 2)
+			surface.SetDrawColor(v, v, v, 255)
+			local poly = {}
+			for seg = 0, 63 do
+				local ang = (seg / 64) * math.pi * 2
+				poly[#poly + 1] = { x = c + math.cos(ang) * r * c, y = c + math.sin(ang) * r * c }
+			end
+			surface.DrawPoly(poly)
+		end
+	cam.End2D()
+	render.OverrideAlphaWriteEnable(false)
+	render.PopRenderTarget()
+
+	RI.GlowMat = RI.GlowMat or CreateMaterial("lament_roundintro_glow_mat", "UnlitGeneric", {
+		["$basetexture"] = RI.GlowRT:GetName(),
+		["$additive"] = "1",
+		["$vertexcolor"] = "1",
+		["$vertexalpha"] = "1",
+		["$ignorez"] = "1",
+	})
+	RI.GlowBuilt = true
+end
+
+-- built outside the panel's paint (pushing a render target mid-VGUI paint can mess up its state).
+-- rebuilt for every new intro and on resolution changes, since render targets can lose their contents.
+hook.Add("DrawOverlay", "RoundIntro_GlowTexture", function()
+	if RI.GlowBuilt or not IsValid(RI.Panel) then return end
+	BuildGlowTexture()
+end)
+hook.Add("OnScreenSizeChanged", "RoundIntro_GlowTexture", function() RI.GlowBuilt = false end)
+
 local function Close()
 	if IsValid(RI.Panel) then RI.Panel:Remove() end
 	RI.Panel = nil
@@ -371,6 +452,7 @@ function RI.Sync(info)
 		Close()
 		RI.Key = info.key
 		RI.WakeStart = nil
+		RI.GlowBuilt = false
 
 		local pnl = vgui.Create("DPanel")
 		pnl:SetPos(0, 0)
@@ -396,20 +478,17 @@ function RI.Sync(info)
 			surface.SetDrawColor(0, 0, 0, 255)
 			surface.DrawRect(0, 0, w, h)
 
-			-- soft light behind the character so the shadow reads
 			local cx = self.Char:GetX() + self.Char:GetWide() / 2
-			local glow = 0.35 + 0.65 * (self.Char.Lit or 0)
-			for i = 8, 1, -1 do
-				local k = i / 8
-				draw.NoTexture()
-				surface.SetDrawColor(70, 70, 78, 9 * glow)
-				local rx, ry = w * 0.22 * k, h * 0.42 * k
-				local poly = {}
-				for s = 0, 31 do
-					local ang = (s / 32) * math.pi * 2
-					poly[#poly + 1] = { x = cx + math.cos(ang) * rx, y = h * 0.55 + math.sin(ang) * ry }
-				end
-				surface.DrawPoly(poly)
+			-- radial gradient glow in the exact role color: nothing before the reveal,
+			-- fades in with the reveal light (alpha only, the color itself never changes)
+			local lit = self.Char.Lit or 0
+			local rc = (inf.role and inf.role ~= "" and tt >= T_ROLE) and (inf.roleColor or Color(240, 240, 240)) or nil
+			if rc and lit > 0.01 and RI.GlowMat then
+				local GLOW_STRENGTH = 0.45 -- brightness of the middle once fully lit (0-1)
+				local rw, rh = w * 0.72, h * 1.2 -- the texture fades to nothing at its edges, so it can be big
+				surface.SetMaterial(RI.GlowMat)
+				surface.SetDrawColor(rc.r, rc.g, rc.b, 255 * GLOW_STRENGTH * lit * out)
+				surface.DrawTexturedRect(cx - rw / 2, h * 0.55 - rh / 2, rw, rh)
 			end
 
 			local x = U(28)                  -- hug the left edge of the screen
@@ -502,6 +581,10 @@ function RI.Sync(info)
 				end
 			end
 			self.Char.Lit = target
+
+			-- take the character off the frame before the white wash-out starts
+			local dur = inf.duration or 10
+			self.Char:SetVisible(tt + RealFrameTime() < dur - WASH_TIME)
 
 			-- done: close and start the wake-up fade
 			if tt >= (inf.duration or 10) then

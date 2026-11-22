@@ -752,3 +752,74 @@ function hg.RenderBandageGloves(ent, ply)
 	model:DrawModel()
 	if clr then render.SetColorModulation(1, 1, 1) end
 end
+
+------------------------------------------------------------------------
+-- preview models (role screen, MVP / round summary cards, inventory)
+--
+-- DrawAccesories and the clothing materials read appearance data off the entity they draw.
+-- a DModelPanel's model isn't the player, so on it:
+--   GetPlayerColor / GetNWVector("PlayerColor") -> colorable clothes (cl_fake reads PlayerColor off the entity)
+--   GetNWEntity("ply")                          -> masks with random bodygroups need a real player owner
+-- entities look up methods on their metatable before their own fields, so a per-entity
+-- override like ent.GetPlayerColor = ... never runs. instead the Entity methods are wrapped
+-- once, and answer differently only for models tagged with hg.SetupPreviewModel.
+--
+-- call hg.SetupPreviewModel(ent, ply[, colorVec]) from the panel's LayoutEntity.
+--   colorVec (optional) forces the clothing color, e.g. from a saved appearance's AColor
+------------------------------------------------------------------------
+local PreviewWrappers = {}
+
+local function PatchPreviewMeta()
+	local EntMeta = FindMetaTable("Entity")
+	-- re-wrap if something (lua refresh of cl_fake etc.) replaced the functions since last time
+	if EntMeta.GetPlayerColor ~= PreviewWrappers.GetPlayerColor then
+		local orig = EntMeta.GetPlayerColor
+		PreviewWrappers.GetPlayerColor = function(self, ...)
+			local c = self.HGPreviewColor
+			if c then return c end
+			local p = self.HGPreviewOwner
+			if p and IsValid(p) then return p:GetPlayerColor() end
+			if orig then return orig(self, ...) end
+		end
+		EntMeta.GetPlayerColor = PreviewWrappers.GetPlayerColor
+	end
+	if EntMeta.GetNWVector ~= PreviewWrappers.GetNWVector then
+		local orig = EntMeta.GetNWVector
+		PreviewWrappers.GetNWVector = function(self, key, def, ...)
+			if key == "PlayerColor" then
+				local c = self.HGPreviewColor
+				if c then return c end
+				local p = self.HGPreviewOwner
+				if p and IsValid(p) then return p:GetPlayerColor() end
+			end
+			return orig(self, key, def, ...)
+		end
+		EntMeta.GetNWVector = PreviewWrappers.GetNWVector
+	end
+	if EntMeta.GetNWEntity ~= PreviewWrappers.GetNWEntity then
+		local orig = EntMeta.GetNWEntity
+		PreviewWrappers.GetNWEntity = function(self, key, def, ...)
+			if key == "ply" then
+				local p = self.HGPreviewOwner
+				if p and IsValid(p) then return p end
+			end
+			return orig(self, key, def, ...)
+		end
+		EntMeta.GetNWEntity = PreviewWrappers.GetNWEntity
+	end
+end
+
+function hg.SetupPreviewModel(ent, ply, colorVec)
+	if not IsValid(ent) then return end
+	PatchPreviewMeta()
+	local owner = IsValid(ply) and ply:IsPlayer() and ply or nil
+	ent.HGPreviewOwner = owner
+	ent.HGPreviewColor = colorVec
+	-- these two are plain fields DrawAccesories already checks first (made for the appearance editor)
+	local col = colorVec or (owner and owner:GetPlayerColor())
+	if col then ent.PreviewAppearanceColor = col end
+	if owner and ent.HGPreviewOwnColors ~= false then
+		ent.PreviewAccessoryColors = owner:GetNetVar("AccessoryColors", nil) or ent.PreviewAccessoryColors
+	end
+	ent.armors = owner and owner.armors or ent.armors -- accessories hidden by armor match the game
+end
