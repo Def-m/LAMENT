@@ -276,6 +276,237 @@ local settings_sidebar_panel = nil
 local settings_main_panel = nil
 local settings_header_label = nil
 local isValidMainMenuPanel = false
+local settings_entry_width = nil
+
+-- main menu look: same palette, font and buttons as the ESC menu's bars
+local mm_bar_bg = Color(28, 28, 28, 180)
+local mm_border = Color(180, 180, 180)
+local mm_btn_bg = Color(31, 31, 31, 205)
+local mm_btn_hover = Color(48, 48, 48, 235)
+local mm_accent = Color(225, 225, 225)
+local mm_text = Color(220, 220, 220)
+local mm_text_idle = Color(188, 188, 188)
+local mm_text_dim = Color(140, 140, 140)
+local SOUND_MM_HOVER = "ui/rem_hover.wav"
+local SOUND_MM_SELECT = "ui/rem_click.wav" -- same click as the loadout menu RETURN button
+
+local function CreateSettingsMMFonts()
+    local scale = math.min(ScrW(), ScrH()) / 1000
+    surface.CreateFont("ZCity_SetMM_Title", {font = "IBM Plex Mono", size = math.max(18, math.floor(38 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_SetMM_Button", {font = "IBM Plex Mono", size = math.max(14, math.floor(22 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_SetMM_Row", {font = "IBM Plex Mono", size = math.max(14, math.floor(21 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_SetMM_Small", {font = "IBM Plex Mono", size = math.max(11, math.floor(15 * scale)), weight = 400, antialias = true})
+end
+hook.Add("OnScreenSizeChanged", "ZCity_SettingsMM_Fonts", CreateSettingsMMFonts)
+CreateSettingsMMFonts()
+
+-- a box like the main menu buttons: dark rounded box, thin border, light strip on the left when lit
+local function MMBox(w, h, hl, active)
+    local lit = math.max(hl or 0, active and 1 or 0)
+    draw.RoundedBox(3, 0, 0, w, h, lit > 0.5 and mm_btn_hover or mm_btn_bg)
+    surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 45 + 100 * lit)
+    surface.DrawOutlinedRect(0, 0, w, h, 1)
+    if lit > 0.01 then
+        surface.SetDrawColor(mm_accent.r, mm_accent.g, mm_accent.b, 210 * lit)
+        surface.DrawRect(0, 0, MenuUnit(3), h)
+    end
+end
+
+-- text that types itself in behind '#' placeholders, like the main menu buttons
+local function MMReveal(text, openTime)
+    local chars = math.Clamp(math.floor((CurTime() - (openTime or 0)) * 22), 0, #text)
+    return text:sub(1, chars) .. string.rep("#", #text - chars)
+end
+
+-- a main-menu style button
+local function MMButton(parent, label, onClick, font, alignLeft)
+    local btn = vgui.Create("DButton", parent)
+    btn:SetText("")
+    btn.Label = label
+    btn.Font = font or "ZCity_SetMM_Button"
+    btn.HoverLerp = 0
+    btn.OpenTime = CurTime()
+    function btn:Think()
+        local hovered = self:IsHovered()
+        if hovered and not self.WasHovered then surface.PlaySound(SOUND_MM_HOVER) end
+        self.WasHovered = hovered
+        self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, hovered and 1 or 0)
+    end
+    function btn:Paint(w, h)
+        local active = self.IsActive and self:IsActive() or false
+        MMBox(w, h, self.HoverLerp, active)
+        local col = (self:IsHovered() or active) and mm_text or mm_text_idle
+        local text = isfunction(self.Label) and self.Label(self) or self.Label
+        if not self.NoReveal then text = MMReveal(text, self.OpenTime) end
+        if alignLeft then
+            draw.SimpleText(text, self.Font, MenuUnit(16), h / 2, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        else
+            draw.SimpleText(text, self.Font, w / 2, h / 2, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        return true
+    end
+    function btn:DoClick()
+        surface.PlaySound(SOUND_MM_SELECT)
+        if onClick then onClick(self) end
+    end
+    return btn
+end
+
+-- setting / keybind rows: a card like the menu buttons that lights up while hovered
+local function MMRowPaint(self, w, h)
+    local hovered = self:IsHovered() or self:IsChildHovered()
+    self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, hovered and 1 or 0)
+    MMBox(w, h, self.HoverLerp)
+end
+
+-- the main menu's bar / panel background
+local function MMPanelPaint(self, w, h)
+    draw.RoundedBox(3, 0, 0, w, h, mm_bar_bg)
+    surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+    surface.DrawOutlinedRect(0, 0, w, h, 1)
+end
+
+local function MMScrollbar(scroll)
+    local sbar = scroll:GetVBar()
+    sbar:SetWide(MenuUnit(4))
+    sbar:SetHideButtons(true)
+    function sbar:Paint(w, h)
+        surface.SetDrawColor(0, 0, 0, 80)
+        surface.DrawRect(0, 0, w, h)
+    end
+    function sbar.btnGrip:Paint(w, h)
+        surface.SetDrawColor(mm_accent.r, mm_accent.g, mm_accent.b, self:IsHovered() and 200 or 90)
+        surface.DrawRect(0, 0, w, h)
+    end
+end
+
+-- page shell shared by the information page: main menu top bar with RETURN, a list on the left and a
+-- panel on the right (same layout as the settings page)
+local function MMBuildPage(ParentPanel, pageTitle, listTitle, hintText)
+    local function GoBack()
+        if not IsValid(ParentPanel) then return end
+        local luaMenu = ParentPanel:GetParent()
+        ParentPanel:AlphaTo(0, 0.2, 0, function()
+            if IsValid(ParentPanel) then ParentPanel:Remove() end
+        end)
+        if IsValid(luaMenu) then
+            for _, child in ipairs(luaMenu:GetChildren()) do
+                if child ~= ParentPanel then
+                    child:SetVisible(true)
+                    child:AlphaTo(255, 0.2, 0)
+                end
+            end
+            if luaMenu.panelparrent then
+                luaMenu.panelparrent = vgui.Create("DPanel", luaMenu)
+                luaMenu.panelparrent:SetPos(0, 0)
+                luaMenu.panelparrent:SetSize(ScrW(), ScrH())
+                luaMenu.panelparrent:MoveToFront()
+                luaMenu.panelparrent:SetMouseInputEnabled(false)
+                luaMenu.panelparrent.Paint = function() end
+            end
+            if luaMenu.ResetCurrentPanel then
+                luaMenu:ResetCurrentPanel()
+            end
+        else
+            ParentPanel:Remove()
+        end
+    end
+
+    local sw, sh = ScrW(), ScrH()
+    local barH = MenuUnit(64)
+    local topBar = vgui.Create("DPanel", ParentPanel)
+    topBar:SetSize(sw, barH)
+    topBar:SetPos(0, -barH)
+    topBar:MoveTo(0, 0, 0.35, 0, 0.3)
+    topBar.OpenTime = CurTime()
+    topBar.Paint = function(self, w, h)
+        surface.SetDrawColor(mm_bar_bg)
+        surface.DrawRect(0, 0, w, h)
+        surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+        surface.DrawRect(0, h - 1, w, 1)
+        draw.SimpleText(MMReveal(pageTitle, self.OpenTime), "ZCity_SetMM_Title", MenuUnit(14), h / 2, mm_text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+    local backBtn = MMButton(topBar, "RETURN", GoBack)
+    topBar.PerformLayout = function(self, w, h)
+        local pad = MenuUnit(6)
+        local bw = MenuUnit(160)
+        local bh = math.min(h - pad * 2, MenuUnit(52))
+        backBtn:SetSize(bw, bh)
+        backBtn:SetPos(w - pad - bw, math.floor((h - bh) / 2))
+    end
+
+    local gap = MenuUnit(12)
+    local bodyY = barH + gap
+    local bodyH = sh - bodyY - gap
+    local sidebarWidth = math.floor(sw / 3.6)
+
+    local function SlideThink(self)
+        local curX, curY = self:GetPos()
+        if math.abs(curX - self.TargetX) > 0.5 then
+            self:SetPos(Lerp(FrameTime() * 8, curX, self.TargetX), curY)
+        else
+            self:SetPos(self.TargetX, curY)
+        end
+    end
+
+    local sidebar = vgui.Create("DPanel", ParentPanel)
+    sidebar:SetSize(sidebarWidth - gap, bodyH)
+    sidebar:SetPos(-sidebarWidth, bodyY)
+    sidebar.TargetX = gap
+    sidebar.Think = SlideThink
+    sidebar.Paint = MMPanelPaint
+
+    local sidebarHeader = vgui.Create("DPanel", sidebar)
+    sidebarHeader:Dock(TOP)
+    sidebarHeader:SetTall(MenuUnit(40))
+    sidebarHeader.OpenTime = CurTime()
+    sidebarHeader.Paint = function(self, w, h)
+        draw.SimpleText(MMReveal(listTitle, self.OpenTime), "ZCity_SetMM_Small", MenuUnit(14), h * 0.6, mm_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+        surface.DrawRect(MenuUnit(10), h - 1, w - MenuUnit(20), 1)
+    end
+
+    local mainW = sw - sidebarWidth - gap * 2
+    local mainPanel = vgui.Create("DPanel", ParentPanel)
+    mainPanel:SetSize(mainW, bodyH)
+    mainPanel:SetPos(sw, bodyY)
+    mainPanel.TargetX = sidebarWidth + gap
+    mainPanel.Think = SlideThink
+    mainPanel.Paint = MMPanelPaint
+
+    local header = vgui.Create("DPanel", mainPanel)
+    header:Dock(TOP)
+    header:DockMargin(0, 0, 0, MenuUnit(4))
+    header:SetTall(MenuUnit(76))
+    header.Paint = function(self, w, h)
+        surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+        surface.DrawRect(MenuUnit(10), h - 1, w - MenuUnit(20), 1)
+    end
+
+    local headerTitle = vgui.Create("DLabel", header)
+    headerTitle:SetPos(MenuUnit(16), MenuUnit(8))
+    headerTitle:SetTall(MenuUnit(42))
+    headerTitle:SetContentAlignment(1)
+    headerTitle:SetFont("ZCity_SetMM_Title")
+    headerTitle:SetTextColor(mm_text)
+    headerTitle:SetText(pageTitle)
+    headerTitle:SetWide(mainW - MenuUnit(32))
+
+    local headerHint = vgui.Create("DLabel", header)
+    headerHint:SetPos(MenuUnit(16), MenuUnit(50))
+    headerHint:SetContentAlignment(1)
+    headerHint:SetFont("ZCity_SetMM_Small")
+    headerHint:SetTextColor(mm_text_dim)
+    headerHint:SetText(hintText or "")
+    headerHint:SizeToContents()
+
+    local contentHolder = vgui.Create("DPanel", mainPanel)
+    contentHolder:Dock(FILL)
+    contentHolder:DockMargin(0, 0, 0, MenuUnit(8))
+    contentHolder.Paint = function() end
+
+    return { topBar = topBar, sidebar = sidebar, main = mainPanel, title = headerTitle, hint = headerHint, content = contentHolder, back = GoBack }
+end
 
 local info_sections = {
     {title = "Rank", key = "rank"},
@@ -477,100 +708,16 @@ if not hg.Leaderboard.NetHooked then
 end
 
 local function SettingsCreateCategoryButton(pParent, strTitle, categoryKey)
-    local id = #settings_category_buttons + 1
-    settings_category_buttons[id] = vgui.Create("DLabel", pParent)
-    local btn = settings_category_buttons[id]
-    btn:SetText(string.rep("#", #strTitle))
-    btn:SetMouseInputEnabled(true)
-    btn:SizeToContents()
-    btn:SetFont("ZCity_Menu_Settings_Button")
-    btn:SetTall(MenuUnit(54))
-    btn:Dock(TOP)
-    btn:DockMargin(MenuUnit(15), MenuUnit(12), 0, 0)
-    btn.CategoryKey = categoryKey
-    btn.RColor = Color(225,225,225)
-    btn.OpenTime = CurTime()
-    btn.LineLerp = 0
-    btn.HoverLerp = 0
-    btn.MouseDriftX = 0
-    btn.MouseDriftY = 0
-    btn.ShakeX = 0
-    btn.ShakeY = 0
-
-    function btn:DoClick()
-        if not IsValid(self) then return end
-        surface.PlaySound(SOUND_SETTINGS_CLICK)
-        settings_active_category = self.CategoryKey
+    local btn = MMButton(pParent, string.upper(strTitle), function()
+        settings_active_category = categoryKey
         SettingsRefreshContent()
-    end
-
-    function btn:Think()
-        local isHovered = self:IsHovered()
-        self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, isHovered and 1 or 0)
-        self.LineLerp = LerpFT(0.2, self.LineLerp or 0, isHovered and 1 or 0)
-
-        if isValidMainMenuPanel then
-            local mx, my = self.MouseDriftX, self.MouseDriftY
-            local sx, sy = self.ShakeX, self.ShakeY
-            self:DockMargin(
-                math.Round(MenuUnit(15) + mx * 0.3 + sx + self.HoverLerp * MenuUnit(2)),
-                math.Round(MenuUnit(12) + my * 0.1 + sy),
-                0, 0
-            )
-        end
-
-        local elapsed = CurTime() - self.OpenTime
-        local charsToShow = math.floor(elapsed * 15)
-        local isActive = (settings_active_category == self.CategoryKey)
-        local targetText = isActive and ('[ '..strTitle..' ]') or strTitle
-        local len = #targetText
-        if charsToShow > len then charsToShow = len end
-        if self.TypewriterTarget ~= targetText then
-            self.TypewriterTarget = targetText
-            self.LastTypewriterChars = 0
-        end
-        if charsToShow > 0 and charsToShow > (self.LastTypewriterChars or 0) then
-            PlayTypewriterSound()
-        end
-        self.LastTypewriterChars = charsToShow
-        local ntxt = ""
-        for i = 1, len do
-            if i <= charsToShow then ntxt = ntxt .. targetText:sub(i, i)
-            else ntxt = ntxt .. "#" end
-        end
-        if self:GetText() ~= ntxt then
-            self:SetText(ntxt)
-            self:SizeToContents()
-        end
-    end
-
-    function btn:Paint(w, h)
-        local isHovered = self:IsHovered()
-        local flash = isHovered and (0.5 + 0.5 * math.sin(CurTime() * 10)) or 0
-        local textColor = self.RColor
-        local outlineColor = Color(0, 0, 0, 255)
-        if isHovered then
-            local v = flash * 255
-            textColor = Color(v, v, v, 255)
-            local inv = 255 - v
-            outlineColor = Color(inv, inv, inv, 255)
-        end
-        surface.SetFont(self:GetFont())
-        local tw, th = surface.GetTextSize(self:GetText())
-        local scale = 1 + (self.HoverLerp or 0) * 0.02
-        local matrix = Matrix()
-        matrix:Translate(Vector(0, h * (1 - scale) * 0.5, 0))
-        matrix:Scale(Vector(scale, scale, 1))
-        cam.PushModelMatrix(matrix)
-        draw.SimpleTextOutlined(self:GetText(), self:GetFont(), 0, h / 2, textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER, 1, outlineColor)
-        if self.LineLerp and self.LineLerp > 0.01 then
-            surface.SetDrawColor(255, 255, 255, 255 * self.LineLerp)
-            surface.DrawRect(0, h / 2 + th / 2, tw * self.LineLerp, math.max(1, MenuUnit(1)))
-        end
-        cam.PopModelMatrix()
-        return true
-    end
-
+    end, "ZCity_SetMM_Button", true)
+    btn:Dock(TOP)
+    btn:SetTall(MenuUnit(48))
+    btn:DockMargin(MenuUnit(10), MenuUnit(8), MenuUnit(10), 0)
+    btn.CategoryKey = categoryKey
+    btn.IsActive = function(self) return settings_active_category == self.CategoryKey end
+    settings_category_buttons[#settings_category_buttons + 1] = btn
     return btn
 end
 
@@ -608,22 +755,11 @@ function SettingsRefreshContent()
     scroll:Dock(FILL)
     scroll:DockMargin(0, 0, 0, 0)
     scroll.Paint = function(self, w, h) end
-
-    local sbar = scroll:GetVBar()
-    sbar:SetWide(MenuUnit(4))
-    sbar:SetHideButtons(true)
-    function sbar:Paint(w, h)
-        surface.SetDrawColor(0, 0, 0, 80)
-        surface.DrawRect(0, 0, w, h)
-    end
-    function sbar.btnGrip:Paint(w, h)
-        local col = self:IsHovered() and settings_color_whitey or settings_color_dim
-        draw.RoundedBox(2, 1, 1, w - 2, h - 2, col)
-    end
+    MMScrollbar(scroll)
 
     local yOffset = MenuUnit(10)
     local sidebarWidth = math.floor(settings_sw / 3.6)
-    local entryWidth = settings_sw - sidebarWidth
+    local entryWidth = settings_entry_width or (settings_sw - sidebarWidth)
 
     for convarName, settingData in SortedPairs(hg.settings.tbl[settings_active_category]) do
         if convarName == "hg_reduce_screeneffects" and not GetConVar("hg_potatopc"):GetBool() then continue end
@@ -634,24 +770,19 @@ function SettingsRefreshContent()
         row:SetSize(entryWidth - MenuUnit(20), MenuUnit(56))
         row:Dock(TOP)
         row:DockMargin(MenuUnit(10), MenuUnit(4), MenuUnit(10), MenuUnit(4))
-        row.Paint = function(self, w, h)
-            surface.SetDrawColor(20, 20, 30, 120)
-            surface.DrawRect(0, 0, w, h)
-            surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 90)
-            surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
-        end
+        row.Paint = MMRowPaint
 
         local title = vgui.Create("DLabel", row)
-        title:SetPos(MenuUnit(12), MenuUnit(6))
-        title:SetFont("ZCity_Menu_Settings_Small")
-        title:SetTextColor(settings_color_text)
+        title:SetPos(MenuUnit(16), MenuUnit(7))
+        title:SetFont("ZCity_SetMM_Row")
+        title:SetTextColor(mm_text)
         title:SetText(settingData[3])
         title:SizeToContents()
 
         local help = vgui.Create("DLabel", row)
-        help:SetPos(MenuUnit(12), MenuUnit(28))
-        help:SetFont("ZCity_Menu_Settings_Tiny")
-        help:SetTextColor(settings_color_text_dim)
+        help:SetPos(MenuUnit(16), MenuUnit(31))
+        help:SetFont("ZCity_SetMM_Small")
+        help:SetTextColor(mm_text_dim)
         help:SetText(convar:GetHelpText() or "")
         help:SizeToContents()
         help:SetWide(entryWidth - MenuUnit(220))
@@ -669,22 +800,23 @@ function SettingsRefreshContent()
             local targetProgress = animProgress
             function toggle:Paint(w, h)
                 animProgress = Lerp(FrameTime() * 8, animProgress, targetProgress)
-                local bgR = Lerp(animProgress, 60, 155)
-                local bgG = Lerp(animProgress, 60, 30)
-                local bgB = Lerp(animProgress, 60, 30)
-                draw.RoundedBox(MenuUnit(3), 0, 0, w, h, Color(20, 20, 20, 230))
-                draw.RoundedBox(MenuUnit(3), 1, 1, w - 2, h - 2, Color(bgR, bgG, bgB, 200))
+                -- monochrome like the main menu: dark when off, light when on
+                local bg = Lerp(animProgress, 40, 200)
+                draw.RoundedBox(3, 0, 0, w, h, Color(20, 20, 20, 230))
+                draw.RoundedBox(3, 1, 1, w - 2, h - 2, Color(bg, bg, bg, 210))
+                surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, self:IsHovered() and 160 or 70)
+                surface.DrawOutlinedRect(0, 0, w, h, 1)
                 local slsize = h - MenuUnit(6)
                 local slPos = Lerp(animProgress, MenuUnit(3), w - slsize - MenuUnit(3))
-                surface.SetDrawColor(245, 245, 245)
-                draw.RoundedBox(MenuUnit(2), slPos, MenuUnit(3), slsize, slsize, Color(245, 245, 245))
+                local k = Lerp(animProgress, 220, 28)
+                draw.RoundedBox(2, slPos, MenuUnit(3), slsize, slsize, Color(k, k, k))
             end
             function toggle:DoClick()
                 local newValue = not convar:GetBool()
                 if convar.GetName then
                     RunConsoleCommand(convar:GetName(), newValue and "1" or "0")
                 end
-                surface.PlaySound(SOUND_SETTINGS_CLICK)
+                surface.PlaySound(SOUND_MM_SELECT)
                 targetProgress = newValue and 1 or 0
             end
 
@@ -755,8 +887,8 @@ function SettingsRefreshContent()
             local valLabel = vgui.Create("DTextEntry", row)
             valLabel:SetSize(MenuUnit(60), MenuUnit(20))
             valLabel:SetPos(ctrlX - sliderBg:GetWide() - MenuUnit(70), MenuUnit(18))
-            valLabel:SetFont("ZCity_Menu_Settings_Tiny")
-            valLabel:SetTextColor(settings_color_text)
+            valLabel:SetFont("ZCity_SetMM_Small")
+            valLabel:SetTextColor(mm_text)
             valLabel:SetText(tostring(curVal))
             valLabel:SetNumeric(true)
             valLabel.Paint = function(self, w, h)
@@ -792,11 +924,10 @@ function SettingsRefreshContent()
             textEntry:SetPos(ctrlX - ctrlW, MenuUnit(16))
             textEntry:SetText(convar:GetString())
             textEntry:SetUpdateOnType(true)
-            textEntry:SetFont("ZCity_Menu_Settings_Tiny")
+            textEntry:SetFont("ZCity_SetMM_Small")
             textEntry.Paint = function(self, w, h)
-                surface.SetDrawColor(20, 20, 20, 240)
-                surface.DrawRect(0, 0, w, h)
-                surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 120)
+                draw.RoundedBox(3, 0, 0, w, h, Color(20, 20, 20, 240))
+                surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, self:HasFocus() and 160 or 70)
                 surface.DrawOutlinedRect(0, 0, w, h, 1)
                 self:DrawTextEntryText(color_white, Color(120, 130, 180), color_white)
             end
@@ -816,18 +947,10 @@ function hg.DrawSettings(ParentPanel)
     isValidMainMenuPanel = IsValid(ParentPanel)
 
     ParentPanel:SetAlpha(0)
+    -- the main menu's blurred black & white backdrop shows through, just a touch darker
     ParentPanel.Paint = function(self, w, h)
-        if hg.DrawBlur then hg.DrawBlur(self, 5) end
-        draw.RoundedBox(0, 0, 0, w, h, settings_clr_verygray)
-        surface.SetDrawColor(settings_menu_gradient_right)
-        surface.SetTexture(tex_gradient_r)
-        surface.DrawTexturedRect(0,0,w,h)
-        surface.SetDrawColor(settings_clr_verygray)
-        surface.SetTexture(tex_gradient_l)
-        surface.DrawTexturedRect(0,0,w,h)
-        surface.SetDrawColor(settings_clr_1)
-        surface.SetTexture(tex_gradient_d)
-        surface.DrawTexturedRect(0,0,w,h)
+        surface.SetDrawColor(0, 0, 0, 70)
+        surface.DrawRect(0, 0, w, h)
     end
     ParentPanel:AlphaTo(255, 0.15, 0)
 
@@ -852,12 +975,70 @@ function hg.DrawSettings(ParentPanel)
         end
     end
 
+    local function GoBack()
+        if not IsValid(ParentPanel) then return end
+        local luaMenu = ParentPanel:GetParent()
+        ParentPanel:AlphaTo(0, 0.2, 0, function()
+            if IsValid(ParentPanel) then ParentPanel:Remove() end
+        end)
+        if IsValid(luaMenu) then
+            for _, child in ipairs(luaMenu:GetChildren()) do
+                if child ~= ParentPanel then
+                    child:SetVisible(true)
+                    child:AlphaTo(255, 0.2, 0)
+                end
+            end
+            if luaMenu.panelparrent then
+                luaMenu.panelparrent = vgui.Create("DPanel", luaMenu)
+                luaMenu.panelparrent:SetPos(0, 0)
+                luaMenu.panelparrent:SetSize(ScrW(), ScrH())
+                luaMenu.panelparrent:MoveToFront()
+                luaMenu.panelparrent:SetMouseInputEnabled(false)
+                luaMenu.panelparrent.Paint = function() end
+            end
+            if luaMenu.ResetCurrentPanel then
+                luaMenu:ResetCurrentPanel()
+            end
+        else
+            ParentPanel:Remove()
+        end
+    end
+
+    -- top bar, same as the main menu's: title on the left, button on the right
+    local barH = MenuUnit(64)
+    local topBar = vgui.Create("DPanel", ParentPanel)
+    topBar:SetSize(settings_sw, barH)
+    topBar:SetPos(0, -barH)
+    topBar:MoveTo(0, 0, 0.35, 0, 0.3)
+    topBar.OpenTime = CurTime()
+    topBar.Paint = function(self, w, h)
+        surface.SetDrawColor(mm_bar_bg)
+        surface.DrawRect(0, 0, w, h)
+        surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+        surface.DrawRect(0, h - 1, w, 1)
+        draw.SimpleText(MMReveal("SETTINGS", self.OpenTime), "ZCity_SetMM_Title", MenuUnit(14), h / 2, mm_text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+
+    local backBtn = MMButton(topBar, "RETURN", GoBack)
+    topBar.PerformLayout = function(self, w, h)
+        local pad = MenuUnit(6)
+        local bw = MenuUnit(160)
+        local bh = math.min(h - pad * 2, MenuUnit(52))
+        backBtn:SetSize(bw, bh)
+        backBtn:SetPos(w - pad - bw, math.floor((h - bh) / 2))
+    end
+
+    local gap = MenuUnit(12)
+    local bodyY = barH + gap
+    local bodyH = settings_sh - bodyY - gap
     local sidebarWidth = math.floor(settings_sw / 3.6)
+
+    -- categories on the left
     local sidebar = vgui.Create("DPanel", ParentPanel)
     settings_sidebar_panel = sidebar
-    sidebar:SetSize(sidebarWidth, settings_sh)
-    sidebar:SetPos(-sidebarWidth, 0)
-    sidebar.TargetX = 0
+    sidebar:SetSize(sidebarWidth - gap, bodyH)
+    sidebar:SetPos(-sidebarWidth, bodyY)
+    sidebar.TargetX = gap
     sidebar.Think = function(self)
         local curX, curY = self:GetPos()
         if math.abs(curX - self.TargetX) > 0.5 then
@@ -866,52 +1047,16 @@ function hg.DrawSettings(ParentPanel)
             self:SetPos(self.TargetX, curY)
         end
     end
-    sidebar:DockMargin(0, 0, 0, 0)
-    sidebar.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(10, 10, 15, 120))
-        surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 90)
-        surface.DrawRect(w - MenuUnit(1), 0, MenuUnit(1), h)
-    end
+    sidebar.Paint = MMPanelPaint
 
     local sidebarHeader = vgui.Create("DPanel", sidebar)
     sidebarHeader:Dock(TOP)
-    sidebarHeader:SetTall(MenuUnit(settings_header_height))
+    sidebarHeader:SetTall(MenuUnit(40))
+    sidebarHeader.OpenTime = CurTime()
     sidebarHeader.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(15, 15, 20, 120))
-        surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 140)
-        surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
-    end
-
-    local sidebarHeaderTitle = vgui.Create("DLabel", sidebarHeader)
-    sidebarHeaderTitle:SetPos(MenuUnit(15), MenuUnit(18))
-    sidebarHeaderTitle:SetFont("ZCity_Menu_Settings_Small")
-    sidebarHeaderTitle:SetTextColor(settings_color_whitey)
-    sidebarHeaderTitle:SetText("SETTINGS")
-    sidebarHeaderTitle:SizeToContents()
-    sidebarHeaderTitle.OpenTime = CurTime()
-    function sidebarHeaderTitle:Think()
-        local elapsed = CurTime() - (self.OpenTime or CurTime())
-        local charsToShow = math.floor(elapsed * 18)
-        local target = "SETTINGS"
-        local len = #target
-        if charsToShow > len then charsToShow = len end
-        if self.TypewriterTarget ~= target then
-            self.TypewriterTarget = target
-            self.LastTypewriterChars = 0
-        end
-        if charsToShow > 0 and charsToShow > (self.LastTypewriterChars or 0) then
-            PlayTypewriterSound()
-        end
-        self.LastTypewriterChars = charsToShow
-        local ntxt = ""
-        for i = 1, len do
-            if i <= charsToShow then ntxt = ntxt .. target:sub(i, i)
-            else ntxt = ntxt .. "#" end
-        end
-        if self:GetText() ~= ntxt then
-            self:SetText(ntxt)
-            self:SizeToContents()
-        end
+        draw.SimpleText(MMReveal("CATEGORIES", self.OpenTime), "ZCity_SetMM_Small", MenuUnit(14), h * 0.6, mm_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+        surface.DrawRect(MenuUnit(10), h - 1, w - MenuUnit(20), 1)
     end
 
     for categoryName, _ in SortedPairs(hg.settings.tbl) do
@@ -922,108 +1067,14 @@ function hg.DrawSettings(ParentPanel)
     end
     SettingsCreateCategoryButton(sidebar, "Keybinds", "Keybinds")
 
-    local backBtn = vgui.Create("DLabel", sidebar)
-    backBtn:Dock(BOTTOM)
-    backBtn:DockMargin(MenuUnit(15), MenuUnit(2), 0, MenuUnit(20))
-    backBtn:SetFont("ZCity_Menu_Settings_Small")
-    backBtn:SetTextColor(settings_color_text)
-    backBtn:SetText(string.rep("#", #"<- Return"))
-    backBtn:SetMouseInputEnabled(true)
-    backBtn:SizeToContents()
-    backBtn:SetTall(MenuUnit(42))
-    backBtn.OpenTime = CurTime()
-    backBtn.HoverLerp = 0
-    backBtn.LineLerp = 0
-    backBtn.HoverScale = 0.008
-    function backBtn:DoClick()
-        surface.PlaySound(SOUND_SETTINGS_CLICK)
-        if IsValid(ParentPanel) then 
-            local luaMenu = ParentPanel:GetParent()
-            ParentPanel:AlphaTo(0, 0.2, 0, function()
-                if IsValid(ParentPanel) then ParentPanel:Remove() end
-            end)
-            if IsValid(luaMenu) then
-                for _, child in ipairs(luaMenu:GetChildren()) do
-                    if child ~= ParentPanel then
-                        child:SetVisible(true)
-                        child:AlphaTo(255, 0.2, 0)
-                    end
-                end
-                if luaMenu.panelparrent then
-                    luaMenu.panelparrent = vgui.Create("DPanel", luaMenu)
-                    luaMenu.panelparrent:SetPos(0, 0)
-                    luaMenu.panelparrent:SetSize(ScrW(), ScrH())
-                    luaMenu.panelparrent:MoveToFront()
-                    luaMenu.panelparrent:SetMouseInputEnabled(false)
-                    luaMenu.panelparrent.Paint = function() end
-                end
-                if luaMenu.ResetCurrentPanel then
-                    luaMenu:ResetCurrentPanel()
-                end
-            else
-                ParentPanel:Remove()
-            end
-        end
-    end
-    function backBtn:Think()
-        local isHovered = self:IsHovered()
-        self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, isHovered and 1 or 0)
-        self.LineLerp = LerpFT(0.2, self.LineLerp or 0, isHovered and 1 or 0)
-        local elapsed = CurTime() - self.OpenTime
-        local charsToShow = math.floor(elapsed * 15)
-        local target = "<- Return"
-        local len = #target
-        if charsToShow > len then charsToShow = len end
-        if self.TypewriterTarget ~= target then
-            self.TypewriterTarget = target
-            self.LastTypewriterChars = 0
-        end
-        if charsToShow > 0 and charsToShow > (self.LastTypewriterChars or 0) then
-            PlayTypewriterSound()
-        end
-        self.LastTypewriterChars = charsToShow
-        local ntxt = ""
-        for i = 1, len do
-            if i <= charsToShow then ntxt = ntxt .. target:sub(i, i)
-            else ntxt = ntxt .. "#" end
-        end
-        if self:GetText() ~= ntxt then
-            self:SetText(ntxt)
-            self:SizeToContents()
-        end
-    end
-    function backBtn:Paint(w, h)
-        local isHovered = self:IsHovered()
-        local flash = isHovered and (0.5 + 0.5 * math.sin(CurTime() * 10)) or 0
-        local textColor = settings_color_text
-        local outlineColor = Color(0, 0, 0, 255)
-        if isHovered then
-            local v = flash * 255
-            textColor = Color(v, v, v, 255)
-            local inv = 255 - v
-            outlineColor = Color(inv, inv, inv, 255)
-        end
-        surface.SetFont(self:GetFont())
-        local tw, th = surface.GetTextSize(self:GetText())
-        local scale = 1 + (self.HoverLerp or 0) * (self.HoverScale or 0.02)
-        local matrix = Matrix()
-        matrix:Translate(Vector(0, h * (1 - scale) * 0.5, 0))
-        matrix:Scale(Vector(scale, scale, 1))
-        cam.PushModelMatrix(matrix)
-        draw.SimpleTextOutlined(self:GetText(), self:GetFont(), 0, h / 2, textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER, 1, outlineColor)
-        if self.LineLerp and self.LineLerp > 0.01 then
-            surface.SetDrawColor(255, 255, 255, 255 * self.LineLerp)
-            surface.DrawRect(0, h / 2 + th / 2, tw * self.LineLerp, math.max(1, MenuUnit(1)))
-        end
-        cam.PopModelMatrix()
-        return true
-    end
-
+    -- the selected category's options
+    local mainW = settings_sw - sidebarWidth - gap * 2
+    settings_entry_width = mainW
     local mainPanel = vgui.Create("DPanel", ParentPanel)
     settings_main_panel = mainPanel
-    mainPanel:SetSize(settings_sw - sidebarWidth, settings_sh)
-    mainPanel:SetPos(settings_sw, 0)
-    mainPanel.TargetX = sidebarWidth
+    mainPanel:SetSize(mainW, bodyH)
+    mainPanel:SetPos(settings_sw, bodyY)
+    mainPanel.TargetX = sidebarWidth + gap
     mainPanel.Think = function(self)
         local curX, curY = self:GetPos()
         if math.abs(curX - self.TargetX) > 0.5 then
@@ -1032,39 +1083,38 @@ function hg.DrawSettings(ParentPanel)
             self:SetPos(self.TargetX, curY)
         end
     end
-    mainPanel.Paint = function(self, w, h) end
+    mainPanel.Paint = MMPanelPaint
 
     local header = vgui.Create("DPanel", mainPanel)
     header:Dock(TOP)
-    header:DockMargin(0, 0, 0, 0)
-    header:SetTall(MenuUnit(settings_header_height))
+    header:DockMargin(0, 0, 0, MenuUnit(4))
+    header:SetTall(MenuUnit(76))
     header.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(15, 15, 20, 120))
-        surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 140)
-        surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+        surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+        surface.DrawRect(MenuUnit(10), h - 1, w - MenuUnit(20), 1)
     end
 
     local headerTitle = vgui.Create("DLabel", header)
-    headerTitle:SetPos(MenuUnit(25), MenuUnit(12))
-    headerTitle:SetTall(MenuUnit(40))
+    headerTitle:SetPos(MenuUnit(16), MenuUnit(8))
+    headerTitle:SetTall(MenuUnit(42))
     headerTitle:SetContentAlignment(1)
-    headerTitle:SetFont("ZCity_Menu_Settings_Medium")
-    headerTitle:SetTextColor(settings_color_whitey)
+    headerTitle:SetFont("ZCity_SetMM_Title")
+    headerTitle:SetTextColor(mm_text)
     headerTitle:SetText(settings_active_category and settings_active_category:upper() or "SETTINGS")
-    headerTitle:SetWide(settings_sw - sidebarWidth - MenuUnit(50))
+    headerTitle:SetWide(mainW - MenuUnit(32))
     settings_header_label = headerTitle
 
     local headerHint = vgui.Create("DLabel", header)
-    headerHint:SetPos(MenuUnit(25), MenuUnit(54))
+    headerHint:SetPos(MenuUnit(16), MenuUnit(50))
     headerHint:SetContentAlignment(1)
-    headerHint:SetFont("ZCity_Menu_Settings_Tiny")
-    headerHint:SetTextColor(settings_color_text_dim)
+    headerHint:SetFont("ZCity_SetMM_Small")
+    headerHint:SetTextColor(mm_text_dim)
     headerHint:SetText("Preferences.")
     headerHint:SizeToContents()
 
     local contentHolder = vgui.Create("DPanel", mainPanel)
     contentHolder:Dock(FILL)
-    contentHolder:DockMargin(0, 0, 0, 0)
+    contentHolder:DockMargin(0, 0, 0, MenuUnit(8))
     contentHolder.Paint = function(self, w, h) end
     settings_content_panel = contentHolder
 
@@ -1151,14 +1201,12 @@ local function KeybindsCreateBinder(parent, bindName, slot, x, y)
     binder:SetSize(MenuUnit(120), MenuUnit(28))
     binder:SetPos(x, y)
     binder:SetValue((hg.Binds.CurrentBinds[bindName] or {})[slot] or KEY_NONE)
-    binder:SetFont("ZCity_Menu_Settings_Tiny")
+    binder:SetFont("ZCity_SetMM_Small")
 
     function binder:Paint(w, h)
-        surface.SetDrawColor(20, 20, 20, 240)
-        surface.DrawRect(0, 0, w, h)
-        surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, self:IsHovered() and 210 or 120)
-        surface.DrawOutlinedRect(0, 0, w, h, 1)
-        draw.SimpleText(self.Trapping and "PRESS A BUTTON" or KeybindsFormatKey(self:GetValue()), "ZCity_Menu_Settings_Tiny", w / 2, h / 2, settings_color_text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, (self:IsHovered() or self.Trapping) and 1 or 0)
+        MMBox(w, h, self.HoverLerp)
+        draw.SimpleText(self.Trapping and "PRESS A BUTTON" or KeybindsFormatKey(self:GetValue()), "ZCity_SetMM_Small", w / 2, h / 2, self.HoverLerp > 0.5 and mm_text or mm_text_idle, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         return true
     end
 
@@ -1180,18 +1228,7 @@ function KeybindsRefreshContent()
     local scroll = vgui.Create("DScrollPanel", keybinds_content_panel)
     scroll:Dock(FILL)
     scroll.Paint = function() end
-
-    local sbar = scroll:GetVBar()
-    sbar:SetWide(MenuUnit(4))
-    sbar:SetHideButtons(true)
-    function sbar:Paint(w, h)
-        surface.SetDrawColor(0, 0, 0, 80)
-        surface.DrawRect(0, 0, w, h)
-    end
-    function sbar.btnGrip:Paint(w, h)
-        local col = self:IsHovered() and settings_color_whitey or settings_color_dim
-        draw.RoundedBox(2, 1, 1, w - 2, h - 2, col)
-    end
+    MMScrollbar(scroll)
 
     local entryWidth = keybinds_content_panel:GetWide()
     if entryWidth <= 0 then entryWidth = settings_sw end
@@ -1201,38 +1238,27 @@ function KeybindsRefreshContent()
         row:SetSize(entryWidth - MenuUnit(20), MenuUnit(68))
         row:Dock(TOP)
         row:DockMargin(MenuUnit(10), MenuUnit(4), MenuUnit(10), MenuUnit(4))
-        row.Paint = function(self, w, h)
-            surface.SetDrawColor(20, 20, 30, 120)
-            surface.DrawRect(0, 0, w, h)
-            surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 90)
-            surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
-        end
+        row.Paint = MMRowPaint
 
         local title = vgui.Create("DLabel", row)
-        title:SetPos(MenuUnit(12), MenuUnit(7))
-        title:SetFont("ZCity_Menu_Settings_Small")
-        title:SetTextColor(settings_color_text)
+        title:SetPos(MenuUnit(16), MenuUnit(9))
+        title:SetFont("ZCity_SetMM_Row")
+        title:SetTextColor(mm_text)
         title:SetText(hg.Binds.Names[bindName] or bindName)
         title:SizeToContents()
 
         local help = vgui.Create("DLabel", row)
-        help:SetPos(MenuUnit(12), MenuUnit(34))
-        help:SetFont("ZCity_Menu_Settings_Tiny")
-        help:SetTextColor(settings_color_text_dim)
+        help:SetPos(MenuUnit(16), MenuUnit(36))
+        help:SetFont("ZCity_SetMM_Small")
+        help:SetTextColor(mm_text_dim)
         help:SetText(bindName)
         help:SizeToContents()
 
-        local clear = vgui.Create("DButton", row)
+        local clear = MMButton(row, "CLEAR", nil, "ZCity_SetMM_Small")
+        clear.NoReveal = true
         clear:SetSize(MenuUnit(62), MenuUnit(28))
-        clear:SetText("")
-        clear.Paint = function(self, w, h)
-            surface.SetDrawColor(20, 20, 20, 240)
-            surface.DrawRect(0, 0, w, h)
-            surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, self:IsHovered() and 210 or 120)
-            surface.DrawOutlinedRect(0, 0, w, h, 1)
-            draw.SimpleText("Clear", "ZCity_Menu_Settings_Tiny", w / 2, h / 2, settings_color_text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        end
         clear.DoClick = function()
+            surface.PlaySound(SOUND_MM_SELECT)
             hg.Binds.CurrentBinds[bindName] = {KEY_NONE, nil}
             hg.Binds.SaveThem()
             KeybindsRefreshContent()
@@ -1262,23 +1288,15 @@ function hg.FillKeybinds(panel)
 
     local hint = vgui.Create("DLabel", bar)
     hint:Dock(FILL)
-    hint:SetFont("ZCity_Menu_Settings_Tiny")
-    hint:SetTextColor(settings_color_text_dim)
+    hint:SetFont("ZCity_SetMM_Small")
+    hint:SetTextColor(mm_text_dim)
     hint:SetText("Console binds still work; these are alternatives.")
     hint:SetContentAlignment(4)
 
-    local resetBtn = vgui.Create("DButton", bar)
+    local resetBtn = MMButton(bar, "RESET DEFAULTS", nil, "ZCity_SetMM_Small")
     resetBtn:Dock(RIGHT)
-    resetBtn:DockMargin(0, MenuUnit(10), 0, MenuUnit(10))
-    resetBtn:SetWide(MenuUnit(140))
-    resetBtn:SetText("")
-    resetBtn.Paint = function(self, w, h)
-        surface.SetDrawColor(20, 20, 20, 240)
-        surface.DrawRect(0, 0, w, h)
-        surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, self:IsHovered() and 210 or 120)
-        surface.DrawOutlinedRect(0, 0, w, h, 1)
-        draw.SimpleText("Reset defaults", "ZCity_Menu_Settings_Tiny", w / 2, h / 2, settings_color_text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    end
+    resetBtn:DockMargin(0, MenuUnit(8), 0, MenuUnit(8))
+    resetBtn:SetWide(MenuUnit(170))
 
     local list = vgui.Create("DPanel", panel)
     list:Dock(FILL)
@@ -1288,7 +1306,7 @@ function hg.FillKeybinds(panel)
     keybinds_header_label = nil
 
     resetBtn.DoClick = function()
-        surface.PlaySound(SOUND_SETTINGS_CLICK)
+        surface.PlaySound(SOUND_MM_SELECT)
         KeybindsResetDefaults()
         keybinds_content_panel = list
         KeybindsRefreshContent()
@@ -1468,17 +1486,6 @@ function hg.DrawKeybinds(ParentPanel)
 end
 
 local function InfoCreateSectionButton(pParent, strTitle, sectionKey)
-    local id = #info_section_buttons + 1
-    info_section_buttons[id] = vgui.Create("DLabel", pParent)
-    local btn = info_section_buttons[id]
-    btn:SetText(string.rep("#", #strTitle))
-    btn:SetMouseInputEnabled(true)
-    btn:SizeToContents()
-    btn:SetFont("ZCity_Menu_Settings_Button")
-    btn:SetTall(MenuUnit(54))
-    btn:Dock(TOP)
-    btn:DockMargin(MenuUnit(15), MenuUnit(12), 0, 0)
-    btn.SectionKey = sectionKey
     local sectionData
     for _, data in ipairs(info_sections) do
         if data.key == sectionKey then
@@ -1486,84 +1493,23 @@ local function InfoCreateSectionButton(pParent, strTitle, sectionKey)
             break
         end
     end
-    btn.SectionDisabled = sectionData and sectionData.disabled or false
-    btn.DisabledColor = sectionData and sectionData.disabledColor or Color(105, 105, 105, 180)
-    btn.RColor = btn.SectionDisabled and btn.DisabledColor or Color(225,225,225)
-    btn.OpenTime = CurTime()
-    btn.LineLerp = 0
-    btn.HoverLerp = 0
-
-    function btn:DoClick()
-        if not IsValid(self) then return end
-        if self.SectionDisabled then return end
-        surface.PlaySound(SOUND_SETTINGS_CLICK)
-        info_active_section = self.SectionKey
+    local disabled = sectionData and sectionData.disabled or false
+    local btn = MMButton(pParent, string.upper(strTitle), function()
+        info_active_section = sectionKey
         InfoRefreshContent()
+    end, "ZCity_SetMM_Button", true)
+    btn:Dock(TOP)
+    btn:SetTall(MenuUnit(48))
+    btn:DockMargin(MenuUnit(10), MenuUnit(8), MenuUnit(10), 0)
+    btn.SectionKey = sectionKey
+    btn.SectionDisabled = disabled
+    btn.IsActive = function(self) return not self.SectionDisabled and info_active_section == self.SectionKey end
+    if disabled then
+        btn:SetEnabled(false)
+        btn:SetMouseInputEnabled(false)
+        btn:SetAlpha(110)
     end
-
-    function btn:Think()
-        local isHovered = not self.SectionDisabled and self:IsHovered()
-        self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, isHovered and 1 or 0)
-        self.LineLerp = LerpFT(0.2, self.LineLerp or 0, isHovered and 1 or 0)
-        self:DockMargin(
-            math.Round(MenuUnit(15) + self.HoverLerp * MenuUnit(2)),
-            MenuUnit(12),
-            0,
-            0
-        )
-
-        local elapsed = CurTime() - self.OpenTime
-        local charsToShow = math.floor(elapsed * 15)
-        local isActive = not self.SectionDisabled and info_active_section == self.SectionKey
-        local targetText = isActive and ("[ " .. strTitle .. " ]") or strTitle
-        local len = #targetText
-        if charsToShow > len then charsToShow = len end
-        if self.TypewriterTarget ~= targetText then
-            self.TypewriterTarget = targetText
-            self.LastTypewriterChars = 0
-        end
-        if charsToShow > 0 and charsToShow > (self.LastTypewriterChars or 0) then
-            PlayTypewriterSound()
-        end
-        self.LastTypewriterChars = charsToShow
-        local ntxt = ""
-        for i = 1, len do
-            if i <= charsToShow then ntxt = ntxt .. targetText:sub(i, i)
-            else ntxt = ntxt .. "#" end
-        end
-        if self:GetText() ~= ntxt then
-            self:SetText(ntxt)
-            self:SizeToContents()
-        end
-    end
-
-    function btn:Paint(w, h)
-        local isHovered = not self.SectionDisabled and self:IsHovered()
-        local flash = isHovered and (0.5 + 0.5 * math.sin(CurTime() * 10)) or 0
-        local textColor = self.RColor
-        local outlineColor = Color(0, 0, 0, 255)
-        if isHovered then
-            local v = flash * 255
-            textColor = Color(v, v, v, 255)
-            local inv = 255 - v
-            outlineColor = Color(inv, inv, inv, 255)
-        end
-        surface.SetFont(self:GetFont())
-        local tw, th = surface.GetTextSize(self:GetText())
-        local scale = 1 + (self.HoverLerp or 0) * 0.008
-        local matrix = Matrix()
-        matrix:Translate(Vector(0, h * (1 - scale) * 0.5, 0))
-        matrix:Scale(Vector(scale, scale, 1))
-        cam.PushModelMatrix(matrix)
-        draw.SimpleTextOutlined(self:GetText(), self:GetFont(), 0, h / 2, textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER, 1, outlineColor)
-        if self.LineLerp and self.LineLerp > 0.01 then
-            surface.SetDrawColor(255, 255, 255, 255 * self.LineLerp)
-            surface.DrawRect(0, h / 2 + th / 2, tw * self.LineLerp, math.max(1, MenuUnit(1)))
-        end
-        cam.PopModelMatrix()
-        return true
-    end
-
+    info_section_buttons[#info_section_buttons + 1] = btn
     return btn
 end
 
@@ -1604,10 +1550,7 @@ function InfoRefreshContent()
         local card = vgui.Create("DPanel", holder)
         card:Dock(FILL)
         card.Paint = function(self, w, h)
-            surface.SetDrawColor(20, 20, 30, 130)
-            surface.DrawRect(0, 0, w, h)
-            surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 90)
-            surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+            MMBox(w, h, 0)
         end
 
         local scroll = vgui.Create("DScrollPanel", card)
@@ -1615,17 +1558,7 @@ function InfoRefreshContent()
         scroll:DockMargin(MenuUnit(18), MenuUnit(18), MenuUnit(18), MenuUnit(18))
         scroll.Paint = function() end
 
-        local scrollBar = scroll:GetVBar()
-        scrollBar:SetWide(MenuUnit(4))
-        scrollBar:SetHideButtons(true)
-        function scrollBar:Paint(w, h)
-            surface.SetDrawColor(0, 0, 0, 80)
-            surface.DrawRect(0, 0, w, h)
-        end
-        function scrollBar.btnGrip:Paint(w, h)
-            local col = self:IsHovered() and settings_color_whitey or settings_color_dim
-            draw.RoundedBox(2, 1, 1, w - 2, h - 2, col)
-        end
+        MMScrollbar(scroll)
 
         local profileBlock = vgui.Create("DPanel", scroll)
         profileBlock:Dock(TOP)
@@ -1651,32 +1584,32 @@ function InfoRefreshContent()
         end
 
         local playerLabel = vgui.Create("DLabel", profileBlock)
-        playerLabel:SetFont("ZCity_Menu_Settings_Medium")
-        playerLabel:SetTextColor(settings_color_whitey)
+        playerLabel:SetFont("ZCity_SetMM_Title")
+        playerLabel:SetTextColor(mm_text)
         playerLabel:SetContentAlignment(5)
         playerLabel:SetText("")
 
         local xpLabel = vgui.Create("DLabel", profileBlock)
-        xpLabel:SetFont("ZCity_Menu_Settings_Small")
-        xpLabel:SetTextColor(settings_color_text)
+        xpLabel:SetFont("ZCity_SetMM_Row")
+        xpLabel:SetTextColor(mm_text)
         xpLabel:SetContentAlignment(5)
         xpLabel:SetText("")
 
         local skillLabel = vgui.Create("DLabel", profileBlock)
-        skillLabel:SetFont("ZCity_Menu_Settings_Small")
-        skillLabel:SetTextColor(settings_color_text_dim)
+        skillLabel:SetFont("ZCity_SetMM_Row")
+        skillLabel:SetTextColor(mm_text_dim)
         skillLabel:SetContentAlignment(5)
         skillLabel:SetText("")
 
         local medalLabel = vgui.Create("DLabel", profileBlock)
-        medalLabel:SetFont("ZCity_Menu_Settings_Small")
-        medalLabel:SetTextColor(settings_color_text)
+        medalLabel:SetFont("ZCity_SetMM_Row")
+        medalLabel:SetTextColor(mm_text)
         medalLabel:SetContentAlignment(5)
         medalLabel:SetText("")
 
         local bandLabel = vgui.Create("DLabel", profileBlock)
-        bandLabel:SetFont("ZCity_Menu_Settings_Tiny")
-        bandLabel:SetTextColor(settings_color_text_dim)
+        bandLabel:SetFont("ZCity_SetMM_Small")
+        bandLabel:SetTextColor(mm_text_dim)
         bandLabel:SetContentAlignment(5)
         bandLabel:SetText("")
 
@@ -1723,8 +1656,8 @@ function InfoRefreshContent()
         local statsTitle = vgui.Create("DLabel", scroll)
         statsTitle:Dock(TOP)
         statsTitle:DockMargin(0, 0, 0, MenuUnit(10))
-        statsTitle:SetFont("ZCity_Menu_Settings_Small")
-        statsTitle:SetTextColor(settings_color_whitey)
+        statsTitle:SetFont("ZCity_SetMM_Row")
+        statsTitle:SetTextColor(mm_text)
         statsTitle:SetText("STATISTICS")
         statsTitle:SetTall(MenuUnit(28))
 
@@ -1738,23 +1671,20 @@ function InfoRefreshContent()
         for _, statData in ipairs(info_stat_rows) do
             local statPanel = vgui.Create("DPanel", statsGrid)
             statPanel.Paint = function(self, w, h)
-                surface.SetDrawColor(20, 20, 30, 120)
-                surface.DrawRect(0, 0, w, h)
-                surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 65)
-                surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+                MMBox(w, h, 0)
             end
 
             local title = vgui.Create("DLabel", statPanel)
             title:SetPos(MenuUnit(12), MenuUnit(10))
-            title:SetFont("ZCity_Menu_Settings_Tiny")
-            title:SetTextColor(settings_color_text_dim)
+            title:SetFont("ZCity_SetMM_Small")
+            title:SetTextColor(mm_text_dim)
             title:SetText(string.upper(statData[1]))
             title:SizeToContents()
 
             local value = vgui.Create("DLabel", statPanel)
             value:SetPos(MenuUnit(12), MenuUnit(30))
-            value:SetFont("ZCity_Menu_Settings_Small")
-            value:SetTextColor(settings_color_text)
+            value:SetFont("ZCity_SetMM_Row")
+            value:SetTextColor(mm_text)
             value:SetText("0")
             value:SizeToContents()
             value.StatKey = statData[2]
@@ -1779,23 +1709,20 @@ function InfoRefreshContent()
 
         local kdPanel = vgui.Create("DPanel", statsGrid)
         kdPanel.Paint = function(self, w, h)
-            surface.SetDrawColor(20, 20, 30, 120)
-            surface.DrawRect(0, 0, w, h)
-            surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 65)
-            surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+            MMBox(w, h, 0)
         end
 
         local kdTitle = vgui.Create("DLabel", kdPanel)
         kdTitle:SetPos(MenuUnit(12), MenuUnit(10))
-        kdTitle:SetFont("ZCity_Menu_Settings_Tiny")
-        kdTitle:SetTextColor(settings_color_text_dim)
+        kdTitle:SetFont("ZCity_SetMM_Small")
+        kdTitle:SetTextColor(mm_text_dim)
         kdTitle:SetText("K/D")
         kdTitle:SizeToContents()
 
         local kdValue = vgui.Create("DLabel", kdPanel)
         kdValue:SetPos(MenuUnit(12), MenuUnit(30))
-        kdValue:SetFont("ZCity_Menu_Settings_Small")
-        kdValue:SetTextColor(settings_color_text)
+        kdValue:SetFont("ZCity_SetMM_Row")
+        kdValue:SetTextColor(mm_text)
         kdValue:SetText("0.00")
         kdValue:SizeToContents()
         function kdValue:Think()
@@ -1836,8 +1763,8 @@ function InfoRefreshContent()
         local achievementsTitle = vgui.Create("DLabel", scroll)
         achievementsTitle:Dock(TOP)
         achievementsTitle:DockMargin(0, 0, 0, MenuUnit(10))
-        achievementsTitle:SetFont("ZCity_Menu_Settings_Small")
-        achievementsTitle:SetTextColor(settings_color_whitey)
+        achievementsTitle:SetFont("ZCity_SetMM_Row")
+        achievementsTitle:SetTextColor(mm_text)
         achievementsTitle:SetText("OBTAINED ACHIEVEMENTS")
         achievementsTitle:SetTall(MenuUnit(28))
 
@@ -1847,8 +1774,8 @@ function InfoRefreshContent()
 
         local achievementsEmpty = vgui.Create("DLabel", achievementsHolder)
         achievementsEmpty:Dock(TOP)
-        achievementsEmpty:SetFont("ZCity_Menu_Settings_Tiny")
-        achievementsEmpty:SetTextColor(settings_color_text_dim)
+        achievementsEmpty:SetFont("ZCity_SetMM_Small")
+        achievementsEmpty:SetTextColor(mm_text_dim)
         achievementsEmpty:SetContentAlignment(5)
         achievementsEmpty:SetText("NO ACHIEVEMENTS OBTAINED YET")
         achievementsEmpty:SetTall(MenuUnit(28))
@@ -1888,20 +1815,20 @@ function InfoRefreshContent()
 
                 local title = vgui.Create("DLabel", row)
                 title:SetPos(MenuUnit(12), MenuUnit(10))
-                title:SetFont("ZCity_Menu_Settings_Small")
+                title:SetFont("ZCity_SetMM_Row")
                 title:SetTextColor(rarityColor)
                 title:SetText(ach.name or "Achievement")
                 title:SizeToContents()
 
                 local desc = vgui.Create("DLabel", row)
                 desc:SetPos(MenuUnit(12), MenuUnit(30))
-                desc:SetFont("ZCity_Menu_Settings_Tiny")
-                desc:SetTextColor(settings_color_text_dim)
+                desc:SetFont("ZCity_SetMM_Small")
+                desc:SetTextColor(mm_text_dim)
                 desc:SetText(ach.description or "")
 
                 local obtainedAt = vgui.Create("DLabel", row)
                 obtainedAt:SetPos(MenuUnit(12), MenuUnit(49))
-                obtainedAt:SetFont("ZCity_Menu_Settings_Tiny")
+                obtainedAt:SetFont("ZCity_SetMM_Small")
                 obtainedAt:SetTextColor(rarityColor)
                 obtainedAt:SetText("Obtained: " .. InfoFormatAchievementDate(ach.obtained_at))
                 obtainedAt:SizeToContents()
@@ -1984,23 +1911,13 @@ function InfoRefreshContent()
         scroll:DockMargin(MenuUnit(24), MenuUnit(24), MenuUnit(24), MenuUnit(24))
         scroll.Paint = function() end
 
-        local sbar = scroll:GetVBar()
-        sbar:SetWide(MenuUnit(4))
-        sbar:SetHideButtons(true)
-        function sbar:Paint(w, h)
-            surface.SetDrawColor(0, 0, 0, 80)
-            surface.DrawRect(0, 0, w, h)
-        end
-        function sbar.btnGrip:Paint(w, h)
-            local col = self:IsHovered() and settings_color_whitey or settings_color_dim
-            draw.RoundedBox(2, 1, 1, w - 2, h - 2, col)
-        end
+        MMScrollbar(scroll)
 
         local title = vgui.Create("DLabel", scroll)
         title:Dock(TOP)
         title:DockMargin(0, 0, 0, MenuUnit(10))
-        title:SetFont("ZCity_Menu_Settings_Small")
-        title:SetTextColor(settings_color_whitey)
+        title:SetFont("ZCity_SetMM_Row")
+        title:SetTextColor(mm_text)
         title:SetText("TOP 10 PLAYERS")
         title:SetTall(MenuUnit(30))
 
@@ -2018,8 +1935,8 @@ function InfoRefreshContent()
                 local empty = vgui.Create("DLabel", scroll)
                 empty:Dock(TOP)
                 empty:SetTall(MenuUnit(34))
-                empty:SetFont("ZCity_Menu_Settings_Tiny")
-                empty:SetTextColor(settings_color_text_dim)
+                empty:SetFont("ZCity_SetMM_Small")
+                empty:SetTextColor(mm_text_dim)
                 empty:SetContentAlignment(5)
                 empty:SetText("NO SQL LEADERBOARD DATA")
                 rows[#rows + 1] = empty
@@ -2046,11 +1963,11 @@ function InfoRefreshContent()
                     surface.DrawOutlinedRect(0, 0, w, h, 1)
                     surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, rowRank <= 3 and 185 or 95)
                     surface.DrawRect(0, 0, MenuUnit(2), h)
-                    draw.SimpleText("#" .. rowRank, "ZCity_Menu_Settings_Small", MenuUnit(15), h / 2, settings_color_whitey, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                    draw.SimpleText(self.PlayerData.name, "ZCity_Menu_Settings_Small", MenuUnit(96), MenuUnit(22), settings_color_text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                    draw.SimpleText(string.format("K/D %.2f", self.PlayerData.kd), "ZCity_Menu_Settings_Tiny", MenuUnit(96), MenuUnit(43), settings_color_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                    draw.SimpleText("XP " .. self.PlayerData.xp, "ZCity_Menu_Settings_Tiny", w - MenuUnit(54), MenuUnit(22), settings_color_text_dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
-                    draw.SimpleText("K " .. math.floor(self.PlayerData.kills) .. "  D " .. math.floor(self.PlayerData.deaths), "ZCity_Menu_Settings_Tiny", w - MenuUnit(18), MenuUnit(43), settings_color_text_dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                    draw.SimpleText("#" .. rowRank, "ZCity_SetMM_Row", MenuUnit(15), h / 2, settings_color_whitey, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    draw.SimpleText(self.PlayerData.name, "ZCity_SetMM_Row", MenuUnit(96), MenuUnit(22), settings_color_text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    draw.SimpleText(string.format("K/D %.2f", self.PlayerData.kd), "ZCity_SetMM_Small", MenuUnit(96), MenuUnit(43), settings_color_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    draw.SimpleText("XP " .. self.PlayerData.xp, "ZCity_SetMM_Small", w - MenuUnit(54), MenuUnit(22), settings_color_text_dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                    draw.SimpleText("K " .. math.floor(self.PlayerData.kills) .. "  D " .. math.floor(self.PlayerData.deaths), "ZCity_SetMM_Small", w - MenuUnit(18), MenuUnit(43), settings_color_text_dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
                 end
 
                 local avatar = vgui.Create("AvatarImage", row)
@@ -2116,17 +2033,7 @@ function InfoRefreshContent()
         scroll:DockMargin(MenuUnit(24), MenuUnit(24), MenuUnit(24), MenuUnit(24))
         scroll.Paint = function() end
 
-        local sbar = scroll:GetVBar()
-        sbar:SetWide(MenuUnit(4))
-        sbar:SetHideButtons(true)
-        function sbar:Paint(w, h)
-            surface.SetDrawColor(0, 0, 0, 80)
-            surface.DrawRect(0, 0, w, h)
-        end
-        function sbar.btnGrip:Paint(w, h)
-            local col = self:IsHovered() and settings_color_whitey or settings_color_dim
-            draw.RoundedBox(2, 1, 1, w - 2, h - 2, col)
-        end
+        MMScrollbar(scroll)
 
         for _, entry in ipairs(info_credit_entries) do
             local row = vgui.Create("DPanel", scroll)
@@ -2159,10 +2066,7 @@ function InfoRefreshContent()
             end
 
             row.Paint = function(self, w, h)
-                surface.SetDrawColor(20, 20, 30, 120)
-                surface.DrawRect(0, 0, w, h)
-                surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 80)
-                surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+                MMBox(w, h, 0)
 
                 if avatarMat then
                     render.SetStencilEnable(true)
@@ -2203,15 +2107,15 @@ function InfoRefreshContent()
 
             local name = vgui.Create("DLabel", row)
             name:SetPos(textX, MenuUnit(18))
-            name:SetFont("ZCity_Menu_Settings_Small")
-            name:SetTextColor(settings_color_text)
+            name:SetFont("ZCity_SetMM_Row")
+            name:SetTextColor(mm_text)
             name:SetText(entry.name or "")
             name:SizeToContents()
 
             local merit = vgui.Create("DLabel", row)
             merit:SetPos(textX, MenuUnit(40))
-            merit:SetFont("ZCity_Menu_Settings_Tiny")
-            merit:SetTextColor(settings_color_text_dim)
+            merit:SetFont("ZCity_SetMM_Small")
+            merit:SetTextColor(mm_text_dim)
             merit:SetText(entry.merit or "")
             merit:SizeToContents()
 
@@ -2224,8 +2128,8 @@ function InfoRefreshContent()
                 linkButton.Paint = function(self, w, h)
                     if not self:IsHovered() then return end
 
-                    surface.SetFont("ZCity_Menu_Settings_Tiny")
-                    surface.SetTextColor(settings_color_text)
+                    surface.SetFont("ZCity_SetMM_Small")
+                    surface.SetTextColor(mm_text)
                     surface.SetTextPos(0, 0)
                     surface.DrawText(entry.merit or "")
                     surface.SetDrawColor(settings_color_text)
@@ -2243,18 +2147,10 @@ function hg.DrawInformation(ParentPanel)
     settings_sw, settings_sh = ScrW(), ScrH()
 
     ParentPanel:SetAlpha(0)
+    -- the main menu's blurred black & white backdrop shows through, just a touch darker
     ParentPanel.Paint = function(self, w, h)
-        if hg.DrawBlur then hg.DrawBlur(self, 5) end
-        draw.RoundedBox(0, 0, 0, w, h, settings_clr_verygray)
-        surface.SetDrawColor(settings_menu_gradient_right)
-        surface.SetTexture(tex_gradient_r)
-        surface.DrawTexturedRect(0,0,w,h)
-        surface.SetDrawColor(settings_clr_verygray)
-        surface.SetTexture(tex_gradient_l)
-        surface.DrawTexturedRect(0,0,w,h)
-        surface.SetDrawColor(settings_clr_1)
-        surface.SetTexture(tex_gradient_d)
-        surface.DrawTexturedRect(0,0,w,h)
+        surface.SetDrawColor(0, 0, 0, 70)
+        surface.DrawRect(0, 0, w, h)
     end
     ParentPanel:AlphaTo(255, 0.15, 0)
 
@@ -2264,211 +2160,13 @@ function hg.DrawInformation(ParentPanel)
         info_active_section = info_sections[1] and info_sections[1].key or "rank"
     end
 
-    local sidebarWidth = math.floor(settings_sw / 3.6)
-    local sidebar = vgui.Create("DPanel", ParentPanel)
-    sidebar:SetSize(sidebarWidth, settings_sh)
-    sidebar:SetPos(-sidebarWidth, 0)
-    sidebar.TargetX = 0
-    sidebar.Think = function(self)
-        local curX, curY = self:GetPos()
-        if math.abs(curX - self.TargetX) > 0.5 then
-            self:SetPos(Lerp(FrameTime() * 8, curX, self.TargetX), curY)
-        else
-            self:SetPos(self.TargetX, curY)
-        end
-    end
-    sidebar.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(10, 10, 15, 120))
-        surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 90)
-        surface.DrawRect(w - MenuUnit(1), 0, MenuUnit(1), h)
-    end
-
-    local sidebarHeader = vgui.Create("DPanel", sidebar)
-    sidebarHeader:Dock(TOP)
-    sidebarHeader:SetTall(MenuUnit(settings_header_height))
-    sidebarHeader.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(15, 15, 20, 120))
-        surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 140)
-        surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
-    end
-
-    local sidebarHeaderTitle = vgui.Create("DLabel", sidebarHeader)
-    sidebarHeaderTitle:SetPos(MenuUnit(15), MenuUnit(18))
-    sidebarHeaderTitle:SetFont("ZCity_Menu_Small")
-    sidebarHeaderTitle:SetTextColor(settings_color_whitey)
-    sidebarHeaderTitle:SetText("INFORMATION")
-    sidebarHeaderTitle:SizeToContents()
-    sidebarHeaderTitle.OpenTime = CurTime()
-    function sidebarHeaderTitle:Think()
-        local elapsed = CurTime() - (self.OpenTime or CurTime())
-        local charsToShow = math.floor(elapsed * 18)
-        local target = "INFORMATION"
-        local len = #target
-        if charsToShow > len then charsToShow = len end
-        if self.TypewriterTarget ~= target then
-            self.TypewriterTarget = target
-            self.LastTypewriterChars = 0
-        end
-        if charsToShow > 0 and charsToShow > (self.LastTypewriterChars or 0) then
-            PlayTypewriterSound()
-        end
-        self.LastTypewriterChars = charsToShow
-        local ntxt = ""
-        for i = 1, len do
-            if i <= charsToShow then ntxt = ntxt .. target:sub(i, i)
-            else ntxt = ntxt .. "#" end
-        end
-        if self:GetText() ~= ntxt then
-            self:SetText(ntxt)
-            self:SizeToContents()
-        end
-    end
-
+    local shell = MMBuildPage(ParentPanel, "INFORMATION", "SECTIONS", "View rank and credits")
     for _, sectionData in ipairs(info_sections) do
-        InfoCreateSectionButton(sidebar, sectionData.title, sectionData.key)
+        InfoCreateSectionButton(shell.sidebar, sectionData.title, sectionData.key)
     end
-
-    local backBtn = vgui.Create("DLabel", sidebar)
-    backBtn:Dock(BOTTOM)
-    backBtn:DockMargin(MenuUnit(15), MenuUnit(2), 0, MenuUnit(20))
-    backBtn:SetFont("ZCity_Menu_Settings_Small")
-    backBtn:SetTextColor(settings_color_text)
-    backBtn:SetText(string.rep("#", #"<- Return"))
-    backBtn:SetMouseInputEnabled(true)
-    backBtn:SizeToContents()
-    backBtn:SetTall(MenuUnit(42))
-    backBtn.OpenTime = CurTime()
-    backBtn.HoverLerp = 0
-    backBtn.LineLerp = 0
-    function backBtn:DoClick()
-        surface.PlaySound(SOUND_SETTINGS_CLICK)
-        if IsValid(ParentPanel) then
-            local luaMenu = ParentPanel:GetParent()
-            ParentPanel:AlphaTo(0, 0.2, 0, function()
-                if IsValid(ParentPanel) then ParentPanel:Remove() end
-            end)
-            if IsValid(luaMenu) then
-                for _, child in ipairs(luaMenu:GetChildren()) do
-                    if child ~= ParentPanel then
-                        child:SetVisible(true)
-                        child:AlphaTo(255, 0.2, 0)
-                    end
-                end
-                if luaMenu.panelparrent then
-                    luaMenu.panelparrent = vgui.Create("DPanel", luaMenu)
-                    luaMenu.panelparrent:SetPos(0, 0)
-                    luaMenu.panelparrent:SetSize(ScrW(), ScrH())
-                    luaMenu.panelparrent:MoveToFront()
-                    luaMenu.panelparrent:SetMouseInputEnabled(false)
-                    luaMenu.panelparrent.Paint = function() end
-                end
-                if luaMenu.ResetCurrentPanel then
-                    luaMenu:ResetCurrentPanel()
-                end
-            else
-                ParentPanel:Remove()
-            end
-        end
-    end
-    function backBtn:Think()
-        local isHovered = self:IsHovered()
-        self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, isHovered and 1 or 0)
-        self.LineLerp = LerpFT(0.2, self.LineLerp or 0, isHovered and 1 or 0)
-        local elapsed = CurTime() - self.OpenTime
-        local charsToShow = math.floor(elapsed * 15)
-        local target = "<- Return"
-        local len = #target
-        if charsToShow > len then charsToShow = len end
-        if self.TypewriterTarget ~= target then
-            self.TypewriterTarget = target
-            self.LastTypewriterChars = 0
-        end
-        if charsToShow > 0 and charsToShow > (self.LastTypewriterChars or 0) then
-            PlayTypewriterSound()
-        end
-        self.LastTypewriterChars = charsToShow
-        local ntxt = ""
-        for i = 1, len do
-            if i <= charsToShow then ntxt = ntxt .. target:sub(i, i)
-            else ntxt = ntxt .. "#" end
-        end
-        if self:GetText() ~= ntxt then
-            self:SetText(ntxt)
-            self:SizeToContents()
-        end
-    end
-    function backBtn:Paint(w, h)
-        local isHovered = self:IsHovered()
-        local flash = isHovered and (0.5 + 0.5 * math.sin(CurTime() * 10)) or 0
-        local textColor = settings_color_text
-        local outlineColor = Color(0, 0, 0, 255)
-        if isHovered then
-            local v = flash * 255
-            textColor = Color(v, v, v, 255)
-            local inv = 255 - v
-            outlineColor = Color(inv, inv, inv, 255)
-        end
-        surface.SetFont(self:GetFont())
-        local tw, th = surface.GetTextSize(self:GetText())
-        local scale = 1 + (self.HoverLerp or 0) * 0.008
-        local matrix = Matrix()
-        matrix:Translate(Vector(0, h * (1 - scale) * 0.5, 0))
-        matrix:Scale(Vector(scale, scale, 1))
-        cam.PushModelMatrix(matrix)
-        draw.SimpleTextOutlined(self:GetText(), self:GetFont(), 0, h / 2, textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER, 1, outlineColor)
-        if self.LineLerp and self.LineLerp > 0.01 then
-            surface.SetDrawColor(255, 255, 255, 255 * self.LineLerp)
-            surface.DrawRect(0, h / 2 + th / 2, tw * self.LineLerp, math.max(1, MenuUnit(1)))
-        end
-        cam.PopModelMatrix()
-        return true
-    end
-
-    local mainPanel = vgui.Create("DPanel", ParentPanel)
-    mainPanel:SetSize(settings_sw - sidebarWidth, settings_sh)
-    mainPanel:SetPos(settings_sw, 0)
-    mainPanel.TargetX = sidebarWidth
-    mainPanel.Think = function(self)
-        local curX, curY = self:GetPos()
-        if math.abs(curX - self.TargetX) > 0.5 then
-            self:SetPos(Lerp(FrameTime() * 8, curX, self.TargetX), curY)
-        else
-            self:SetPos(self.TargetX, curY)
-        end
-    end
-    mainPanel.Paint = function() end
-
-    local header = vgui.Create("DPanel", mainPanel)
-    header:Dock(TOP)
-    header:SetTall(MenuUnit(settings_header_height))
-    header.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, Color(15, 15, 20, 120))
-        surface.SetDrawColor(settings_color_whitey.r, settings_color_whitey.g, settings_color_whitey.b, 140)
-        surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
-    end
-
-    local headerTitle = vgui.Create("DLabel", header)
-    headerTitle:SetPos(MenuUnit(25), MenuUnit(12))
-    headerTitle:SetTall(MenuUnit(40))
-    headerTitle:SetContentAlignment(1)
-    headerTitle:SetFont("ZCity_Menu_Settings_Medium")
-    headerTitle:SetTextColor(settings_color_whitey)
-    headerTitle:SetText("RANK")
-    headerTitle:SetWide(settings_sw - sidebarWidth - MenuUnit(50))
-    info_header_label = headerTitle
-
-    local headerHint = vgui.Create("DLabel", header)
-    headerHint:SetPos(MenuUnit(25), MenuUnit(54))
-    headerHint:SetContentAlignment(1)
-    headerHint:SetFont("ZCity_Menu_Settings_Tiny")
-    headerHint:SetTextColor(settings_color_text_dim)
-    headerHint:SetText("View rank and credits")
-    headerHint:SizeToContents()
-
-    local contentHolder = vgui.Create("DPanel", mainPanel)
-    contentHolder:Dock(FILL)
-    contentHolder.Paint = function() end
-    info_content_panel = contentHolder
+    shell.title:SetText("RANK")
+    info_header_label = shell.title
+    info_content_panel = shell.content
 
     InfoRefreshContent()
 end

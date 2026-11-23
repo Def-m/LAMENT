@@ -53,7 +53,7 @@ hook.Add("OnScreenSizeChanged", "ZCity_Achievement_Fonts", CreateAchievementFont
 CreateAchievementFonts()
 
 local SOUND_ACH_CLICK = "ui/rem_click.wav"
-local SOUND_ACH_SELECT = "ui/rem_select.wav"
+local SOUND_ACH_SELECT = "ui/rem_click.wav" -- same click as the loadout menu RETURN button
 local SOUND_TYPEWRITER = "shitty/tap-resonant.wav"
 local SOUND_TYPEWRITER_LEVEL = 55
 local SOUND_TYPEWRITER_VOLUME = 0.25
@@ -81,6 +81,50 @@ local achievement_card = Color(20,20,30,120)
 local achievement_card_strong = Color(15,15,20,120)
 local achievement_border = Color(255,255,255,90)
 local achievement_placeholder = Material("homigrad/vgui/models/star.png", "smooth")
+-- main menu look: same palette, font and buttons as the ESC menu's bars
+local mm_bar_bg = Color(28, 28, 28, 180)
+local mm_border = Color(180, 180, 180)
+local mm_btn_bg = Color(31, 31, 31, 205)
+local mm_btn_hover = Color(48, 48, 48, 235)
+local mm_accent = Color(225, 225, 225)
+local mm_text = Color(220, 220, 220)
+local mm_text_idle = Color(188, 188, 188)
+local mm_text_dim = Color(140, 140, 140)
+local SOUND_MM_HOVER = "ui/rem_hover.wav"
+
+local function CreateAchievementMMFonts()
+    local scale = math.min(ScrW(), ScrH()) / 1000
+    surface.CreateFont("ZCity_AchMM_Title", {font = "IBM Plex Mono", size = math.max(18, math.floor(38 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_AchMM_Big", {font = "IBM Plex Mono", size = math.max(16, math.floor(30 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_AchMM_Button", {font = "IBM Plex Mono", size = math.max(14, math.floor(22 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_AchMM_Row", {font = "IBM Plex Mono", size = math.max(14, math.floor(20 * scale)), weight = 400, antialias = true})
+    surface.CreateFont("ZCity_AchMM_Small", {font = "IBM Plex Mono", size = math.max(11, math.floor(15 * scale)), weight = 400, antialias = true})
+end
+hook.Add("OnScreenSizeChanged", "ZCity_AchievementMM_Fonts", CreateAchievementMMFonts)
+CreateAchievementMMFonts()
+
+local function MMBox(w, h, hl, active)
+    local lit = math.max(hl or 0, active and 1 or 0)
+    draw.RoundedBox(3, 0, 0, w, h, lit > 0.5 and mm_btn_hover or mm_btn_bg)
+    surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 45 + 100 * lit)
+    surface.DrawOutlinedRect(0, 0, w, h, 1)
+    if lit > 0.01 then
+        surface.SetDrawColor(mm_accent.r, mm_accent.g, mm_accent.b, 210 * lit)
+        surface.DrawRect(0, 0, MenuUnit(3), h)
+    end
+end
+
+local function MMPanelPaint(self, w, h)
+    draw.RoundedBox(3, 0, 0, w, h, mm_bar_bg)
+    surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+    surface.DrawOutlinedRect(0, 0, w, h, 1)
+end
+
+local function MMReveal(text, openTime)
+    local chars = math.Clamp(math.floor((CurTime() - (openTime or 0)) * 22), 0, #text)
+    return text:sub(1, chars) .. string.rep("#", #text - chars)
+end
+
 local achievement_rarity_colors = {
     Uncommon = Color(92, 184, 92),
     Rare = Color(65, 135, 230),
@@ -423,18 +467,10 @@ function hg.DrawAchievmentsMenu(ParentPanel)
     end
 
     ParentPanel:SetAlpha(0)
+    -- the main menu's blurred black & white backdrop shows through, just a touch darker
     ParentPanel.Paint = function(self, w, h)
-        if hg.DrawBlur then hg.DrawBlur(self, 5) end
-        draw.RoundedBox(0, 0, 0, w, h, achievement_bg)
-        surface.SetDrawColor(achievement_gradient_right)
-        surface.SetTexture(tex_gradient_r)
-        surface.DrawTexturedRect(0, 0, w, h)
-        surface.SetDrawColor(achievement_bg)
-        surface.SetTexture(tex_gradient_l)
-        surface.DrawTexturedRect(0, 0, w, h)
-        surface.SetDrawColor(achievement_overlay)
-        surface.SetTexture(tex_gradient_d)
-        surface.DrawTexturedRect(0, 0, w, h)
+        surface.SetDrawColor(0, 0, 0, 70)
+        surface.DrawRect(0, 0, w, h)
     end
     ParentPanel:AlphaTo(255, achievement_transition_fade_time, 0)
 
@@ -460,33 +496,49 @@ function hg.DrawAchievmentsMenu(ParentPanel)
 
     local header = vgui.Create("DPanel", mainPanel)
     header:Dock(TOP)
-    header:SetTall(MenuUnit(achievement_header_height))
+    header:SetTall(MenuUnit(64))
+    header.OpenTime = CurTime()
     header.Paint = function(self, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, achievement_card_strong)
-        surface.SetDrawColor(achievement_color_white.r, achievement_color_white.g, achievement_color_white.b, 140)
-        surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+        surface.SetDrawColor(mm_bar_bg)
+        surface.DrawRect(0, 0, w, h)
+        surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+        surface.DrawRect(0, h - 1, w, 1)
+        draw.SimpleText(MMReveal("ACHIEVEMENTS", self.OpenTime), "ZCity_AchMM_Title", MenuUnit(14), h / 2, mm_text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     end
 
-    local headerTitle = vgui.Create("DLabel", header)
-    headerTitle:SetFont("ZCity_Ach_Title")
-    headerTitle:SetTextColor(achievement_color_white)
-    headerTitle:SetText("ACHIEVEMENTS")
-    headerTitle:SizeToContents()
-    headerTitle:SetPos(MenuUnit(25), MenuUnit(18))
-
-    local headerHint = vgui.Create("DLabel", header)
-    headerHint:SetFont("ZCity_Ach_Tiny")
-    headerHint:SetTextColor(achievement_color_text_dim)
-    headerHint:SetText("")
-    headerHint:SetVisible(false)
-    headerHint:SetPos(MenuUnit(25), MenuUnit(48))
+    -- RETURN, styled like the main menu buttons (reuses the old return button's close logic)
+    local closer = AchievementCreateHeaderReturnButton(header, ParentPanel)
+    closer:SetVisible(false)
+    local backBtn = vgui.Create("DButton", header)
+    backBtn:SetText("")
+    backBtn.HoverLerp = 0
+    backBtn.OpenTime = CurTime()
+    function backBtn:Think()
+        local hovered = self:IsHovered()
+        if hovered and not self.WasHovered then surface.PlaySound(SOUND_MM_HOVER) end
+        self.WasHovered = hovered
+        self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, hovered and 1 or 0)
+    end
+    function backBtn:Paint(w, h)
+        MMBox(w, h, self.HoverLerp)
+        draw.SimpleText(MMReveal("RETURN", self.OpenTime), "ZCity_AchMM_Button", w / 2, h / 2, self:IsHovered() and mm_text or mm_text_idle, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        return true
+    end
+    function backBtn:DoClick()
+        closer:DoClick()
+    end
+    header.PerformLayout = function(self, w, h)
+        local pad = MenuUnit(6)
+        local bw = MenuUnit(160)
+        local bh = math.min(h - pad * 2, MenuUnit(52))
+        backBtn:SetSize(bw, bh)
+        backBtn:SetPos(w - pad - bw, math.floor((h - bh) / 2))
+    end
 
     local contentHolder = vgui.Create("DPanel", mainPanel)
     contentHolder:Dock(FILL)
-    contentHolder:DockMargin(MenuUnit(22), MenuUnit(22), MenuUnit(22), MenuUnit(22))
+    contentHolder:DockMargin(MenuUnit(12), MenuUnit(12), MenuUnit(12), MenuUnit(12))
     contentHolder.Paint = function() end
-
-    AchievementCreateReturnButton(mainPanel, ParentPanel)
 
     local body = vgui.Create("DPanel", contentHolder)
     body:Dock(FILL)
@@ -498,10 +550,7 @@ function hg.DrawAchievmentsMenu(ParentPanel)
     listCard.TargetX = 0
     listCard.TargetY = 0
     listCard.Paint = function(self, w, h)
-        surface.SetDrawColor(achievement_card.r, achievement_card.g, achievement_card.b, achievement_card.a)
-        surface.DrawRect(0, 0, w, h)
-        surface.SetDrawColor(achievement_color_white.r, achievement_color_white.g, achievement_color_white.b, 70)
-        surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+        MMPanelPaint(self, w, h)
     end
     listCard.Think = function(self)
         local x, y = self:GetPos()
@@ -522,23 +571,21 @@ function hg.DrawAchievmentsMenu(ParentPanel)
     listHeader:Dock(TOP)
     listHeader:SetTall(MenuUnit(54))
     listHeader.Paint = function(self, w, h)
-        surface.SetDrawColor(achievement_card_strong.r, achievement_card_strong.g, achievement_card_strong.b, achievement_card_strong.a)
-        surface.DrawRect(0, 0, w, h)
-        surface.SetDrawColor(achievement_color_white.r, achievement_color_white.g, achievement_color_white.b, 70)
-        surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+        surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+        surface.DrawRect(MenuUnit(10), h - 1, w - MenuUnit(20), 1)
     end
 
     local listTitle = vgui.Create("DLabel", listHeader)
     listTitle:SetPos(MenuUnit(14), MenuUnit(10))
-    listTitle:SetFont("ZCity_Ach_Small")
-    listTitle:SetTextColor(achievement_color_white)
+    listTitle:SetFont("ZCity_AchMM_Row")
+    listTitle:SetTextColor(mm_text)
     listTitle:SetText("ALL ACHIEVEMENTS")
     listTitle:SizeToContents()
 
     local listHint = vgui.Create("DLabel", listHeader)
     listHint:SetPos(MenuUnit(14), MenuUnit(30))
-    listHint:SetFont("ZCity_Ach_Tiny")
-    listHint:SetTextColor(achievement_color_text_dim)
+    listHint:SetFont("ZCity_AchMM_Small")
+    listHint:SetTextColor(mm_text_dim)
     listHint:SetText("Completed entries rise to the top")
     listHint:SizeToContents()
 
@@ -555,8 +602,8 @@ function hg.DrawAchievmentsMenu(ParentPanel)
         surface.DrawRect(0, 0, w, h)
     end
     function listBar.btnGrip:Paint(w, h)
-        local col = self:IsHovered() and achievement_color_white or achievement_color_dim
-        draw.RoundedBox(2, 1, 1, w - 2, h - 2, col)
+        surface.SetDrawColor(mm_accent.r, mm_accent.g, mm_accent.b, self:IsHovered() and 200 or 90)
+        surface.DrawRect(0, 0, w, h)
     end
 
     local detailCard = vgui.Create("DPanel", body)
@@ -565,10 +612,7 @@ function hg.DrawAchievmentsMenu(ParentPanel)
     detailCard.TargetX = 0
     detailCard.TargetY = 0
     detailCard.Paint = function(self, w, h)
-        surface.SetDrawColor(achievement_card.r, achievement_card.g, achievement_card.b, achievement_card.a)
-        surface.DrawRect(0, 0, w, h)
-        surface.SetDrawColor(achievement_color_white.r, achievement_color_white.g, achievement_color_white.b, 70)
-        surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+        MMPanelPaint(self, w, h)
     end
     detailCard.Think = function(self)
         local x, y = self:GetPos()
@@ -589,23 +633,21 @@ function hg.DrawAchievmentsMenu(ParentPanel)
     detailHeader:Dock(TOP)
     detailHeader:SetTall(MenuUnit(54))
     detailHeader.Paint = function(self, w, h)
-        surface.SetDrawColor(achievement_card_strong.r, achievement_card_strong.g, achievement_card_strong.b, achievement_card_strong.a)
-        surface.DrawRect(0, 0, w, h)
-        surface.SetDrawColor(achievement_color_white.r, achievement_color_white.g, achievement_color_white.b, 70)
-        surface.DrawRect(0, h - MenuUnit(1), w, MenuUnit(1))
+        surface.SetDrawColor(mm_border.r, mm_border.g, mm_border.b, 50)
+        surface.DrawRect(MenuUnit(10), h - 1, w - MenuUnit(20), 1)
     end
 
     local detailHeaderTitle = vgui.Create("DLabel", detailHeader)
     detailHeaderTitle:SetPos(MenuUnit(14), MenuUnit(10))
-    detailHeaderTitle:SetFont("ZCity_Ach_Small")
-    detailHeaderTitle:SetTextColor(achievement_color_white)
+    detailHeaderTitle:SetFont("ZCity_AchMM_Row")
+    detailHeaderTitle:SetTextColor(mm_text)
     detailHeaderTitle:SetText("DETAILS")
     detailHeaderTitle:SizeToContents()
 
     local detailHeaderHint = vgui.Create("DLabel", detailHeader)
     detailHeaderHint:SetPos(MenuUnit(14), MenuUnit(30))
-    detailHeaderHint:SetFont("ZCity_Ach_Tiny")
-    detailHeaderHint:SetTextColor(achievement_color_text_dim)
+    detailHeaderHint:SetFont("ZCity_AchMM_Small")
+    detailHeaderHint:SetTextColor(mm_text_dim)
     detailHeaderHint:SetText("Selected achievement overview")
     detailHeaderHint:SizeToContents()
 
@@ -633,30 +675,30 @@ function hg.DrawAchievmentsMenu(ParentPanel)
     detailName.DisplayText = "No achievements loaded"
     detailName.Paint = function(self, w, h)
         local text = self.DisplayText or ""
-        local textOffset = AchievementGetMarqueeOffset(text, "ZCity_Ach_Title", w, w)
+        local textOffset = AchievementGetMarqueeOffset(text, "ZCity_AchMM_Big", w, w)
         local clipX1, clipY1 = self:LocalToScreen(0, 0)
         local clipX2, clipY2 = self:LocalToScreen(w, h)
         render.SetScissorRect(clipX1, clipY1, clipX2, clipY2, true)
-        draw.SimpleText(text, "ZCity_Ach_Title", textOffset, h * 0.5, achievement_color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(text, "ZCity_AchMM_Big", textOffset, h * 0.5, mm_text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         render.SetScissorRect(0, 0, 0, 0, false)
     end
 
     local detailStatus = vgui.Create("DLabel", detailContent)
-    detailStatus:SetFont("ZCity_Ach_Small")
-    detailStatus:SetTextColor(achievement_color_text)
+    detailStatus:SetFont("ZCity_AchMM_Row")
+    detailStatus:SetTextColor(mm_text)
     detailStatus:SetText("Waiting for achievement data")
     detailStatus:SizeToContents()
 
     local detailDesc = vgui.Create("DLabel", detailContent)
-    detailDesc:SetFont("ZCity_Ach_Tiny")
-    detailDesc:SetTextColor(achievement_color_text_dim)
+    detailDesc:SetFont("ZCity_AchMM_Small")
+    detailDesc:SetTextColor(mm_text_dim)
     detailDesc:SetWrap(true)
     detailDesc:SetAutoStretchVertical(true)
     detailDesc:SetText("Open the menu again if achievements do not appear immediately.")
 
     local detailProgress = vgui.Create("DLabel", detailContent)
-    detailProgress:SetFont("ZCity_Ach_Tiny")
-    detailProgress:SetTextColor(achievement_color_text_dim)
+    detailProgress:SetFont("ZCity_AchMM_Small")
+    detailProgress:SetTextColor(mm_text_dim)
     detailProgress:SetText("")
     detailProgress:SizeToContents()
 
@@ -743,8 +785,8 @@ function hg.DrawAchievmentsMenu(ParentPanel)
             local empty = vgui.Create("DLabel", listScroll)
             empty:Dock(TOP)
             empty:SetTall(MenuUnit(40))
-            empty:SetFont("ZCity_Ach_Tiny")
-            empty:SetTextColor(achievement_color_text_dim)
+            empty:SetFont("ZCity_AchMM_Small")
+            empty:SetTextColor(mm_text_dim)
             empty:SetContentAlignment(5)
             empty:SetText("NO ACHIEVEMENTS AVAILABLE")
             return
@@ -767,6 +809,9 @@ function hg.DrawAchievmentsMenu(ParentPanel)
             end
 
             row.Think = function(self)
+                local hovered = self:IsHovered()
+                if hovered and not self.WasHovered then surface.PlaySound(SOUND_MM_HOVER) end
+                self.WasHovered = hovered
                 local active = achievement_active_key == self.Entry.key
                 self.HoverLerp = LerpFT(0.2, self.HoverLerp or 0, (self:IsHovered() or active) and 1 or 0)
             end
@@ -776,8 +821,8 @@ function hg.DrawAchievmentsMenu(ParentPanel)
                 local alpha = 110 + math.floor((self.HoverLerp or 0) * 40)
                 local rarityColor = AchievementGetRarityColor(self.Entry.rarity)
                 local percentText = self.Entry.percent .. "%"
-                local percentFont = "ZCity_Ach_Tiny"
-                local nameFont = "ZCity_Ach_Small"
+                local percentFont = "ZCity_AchMM_Small"
+                local nameFont = "ZCity_AchMM_Row"
                 surface.SetFont(percentFont)
                 local percentW = surface.GetTextSize(percentText)
                 local nameX = MenuUnit(12)
@@ -785,6 +830,7 @@ function hg.DrawAchievmentsMenu(ParentPanel)
                 local rightPadding = MenuUnit(12)
                 local nameAvailable = math.max(10, w - nameX - rightPadding - percentW - MenuUnit(16))
                 local nameOffset = AchievementGetMarqueeOffset(self.Entry.name, nameFont, nameAvailable, w)
+                -- rarity-tinted row, like before
                 surface.SetDrawColor(rarityColor.r * 0.1, rarityColor.g * 0.1, rarityColor.b * 0.1, alpha + 70)
                 surface.DrawRect(0, 0, w, h)
                 if active then
@@ -798,8 +844,8 @@ function hg.DrawAchievmentsMenu(ParentPanel)
                 render.SetScissorRect(clipX1, clipY1, clipX2, clipY2, true)
                 draw.SimpleText(self.Entry.name, nameFont, nameX + nameOffset, nameY, rarityColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
                 render.SetScissorRect(0, 0, 0, 0, false)
-                draw.SimpleText(self.Entry.status, "ZCity_Ach_Tiny", MenuUnit(12), MenuUnit(38), achievement_color_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                draw.SimpleText(percentText, percentFont, w - MenuUnit(12), MenuUnit(16), achievement_color_white, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(self.Entry.status, "ZCity_AchMM_Small", MenuUnit(12), MenuUnit(38), mm_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(percentText, percentFont, w - MenuUnit(12), MenuUnit(16), mm_text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
                 surface.SetDrawColor(0, 0, 0, 160)
                 surface.DrawRect(MenuUnit(12), h - MenuUnit(18), w - MenuUnit(24), MenuUnit(6))
                 surface.SetDrawColor(rarityColor.r, rarityColor.g, rarityColor.b, 220)

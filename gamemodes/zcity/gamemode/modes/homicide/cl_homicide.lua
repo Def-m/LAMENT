@@ -712,7 +712,7 @@ if lply:Team() == TEAM_SPECTATOR then return end
 			-- (1.0 is the most a single sound can be played at). The judge one starts 2 seconds in.
 			sound = (function()
 				local snd = lply.isTraitor and "lament/lam_executioner.mp3" or (lply.isGunner and "lament/lam_judge.mp3") or "lament/lam_victim.mp3"
-				local start = lply.isGunner and 2 or 0
+				local start = (lply.isTraitor and 3) or (lply.isGunner and 2) or 0
 				local hit = { snd, volume = 1, start = start, file = true }
 				return { hit, hit, hit, hit }
 			end)(),
