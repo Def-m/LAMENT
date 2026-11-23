@@ -16,6 +16,8 @@
 --     extra      = { {text=, color=} , ... } (optional, shown under the occupation)
 --     objective  = "Survive."
 --     pose       = "salute" | "scared" | "armed" | "idle"
+--     roleKind   = "killer" | "protector" | "victim" | "neutral" (optional; picks the reveal sound, guessed from role if nil)
+--     sound      = a path or sound entry that overrides the reveal sound (optional; see "role reveal sounds")
 --   }
 -- The old hg.RoundStart.DrawTitle / Fade API still works and is routed through this.
 
@@ -418,14 +420,179 @@ hook.Add("DrawOverlay", "RoundIntro_GlowTexture", function()
 end)
 hook.Add("OnScreenSizeChanged", "RoundIntro_GlowTexture", function() RI.GlowBuilt = false end)
 
+------------------------------------------------------------------------
+-- role reveal sounds
+-- the sting that plays the moment your role is revealed depends on what role you got.
+--
+-- how a role's sound is chosen (first match wins):
+--   1. info.sound                          a path, or a sound entry (see below), passed by the mode
+--   2. RI.RoleSoundsByName[name]           name = role text lowercased with "a"/"an"/"the" removed
+--   3. RI.RoleSounds[info.roleKind]        "killer" | "protector" | "victim" | "neutral"
+--      (no roleKind? it is guessed from the role text with RI.GuessRoleKind)
+--   4. RI.RoleSounds.neutral
+--
+-- custom sounds: drop a file at sound/lament/roles/<kind>.wav (or .mp3 / .ogg), e.g.
+-- sound/lament/roles/killer.wav or sound/lament/roles/judge.wav, and it is used instead
+-- of the built-in one. a name file beats a kind file.
+--
+-- a sound entry is a list of hits played in order:
+--   { { "path.wav", delay = 0, pitch = 100, volume = 1, start = 0 }, ... }
+--   start = seconds into the file to begin from (plays it as a file channel instead of an emitted sound)
+-- the hook "LAMENT_RoleRevealed" (info) runs the moment the role is revealed (modes use it to stop music)
+--
+-- test in console: lament_rolesound_test killer   (or protector / victim / neutral / judge ...)
+------------------------------------------------------------------------
+RI.RoleSounds = RI.RoleSounds or {
+	-- low, warped shriek
+	killer = {
+		{ "npc/stalker/go_alert2a.wav", pitch = 70, volume = 0.8 },
+	},
+	-- two gavel knocks
+	protector = {
+		{ "physics/wood/wood_crate_impact_hard2.wav", pitch = 85, volume = 1 },
+		{ "physics/wood/wood_crate_impact_hard2.wav", delay = 0.22, pitch = 80, volume = 1 },
+	},
+	-- heartbeat
+	victim = {
+		{ "player/heartbeat1.wav", pitch = 100, volume = 1 },
+		{ "player/heartbeat1.wav", delay = 0.38, pitch = 95, volume = 0.8 },
+	},
+	-- anything else (other modes, unknown roles): just the light switch
+	neutral = {},
+}
+
+-- per-role overrides by name, e.g. RI.RoleSoundsByName["vigilante"] = { { "weapons/shotgun/shotgun_cock.wav" } }
+RI.RoleSoundsByName = RI.RoleSoundsByName or {}
+
+local KIND_WORDS = {
+	killer = { "executioner", "traitor", "saboteur", "killer", "murder", "terror", "shooter", "juggernaut", "zombie", "infected" },
+	protector = { "judge", "vigilante", "savior", "saviour", "police", "swat", "sobr", "officer", "guard", "cop", "hero", "soldier", "military", "forces" },
+	victim = { "victim", "innocent", "bystander", "civilian", "survivor", "hostage" },
+}
+function RI.GuessRoleKind(text)
+	text = string.lower(text or "")
+	for _, kind in ipairs({ "killer", "protector", "victim" }) do
+		for _, w in ipairs(KIND_WORDS[kind]) do
+			if string.find(text, w, 1, true) then return kind end
+		end
+	end
+	return "neutral"
+end
+
+local function RoleKey(role)
+	local s = string.lower(string.Trim(role or ""))
+	s = string.gsub(s, "^the%s+", "")
+	s = string.gsub(s, "^an?%s+", "")
+	return s
+end
+
+-- a custom file the server/players have in sound/lament/roles/
+local function CustomSound(name)
+	if not name or name == "" then return nil end
+	for _, ext in ipairs({ ".wav", ".mp3", ".ogg" }) do
+		local p = "lament/roles/" .. name .. ext
+		if file.Exists("sound/" .. p, "GAME") then return { { p } } end
+	end
+end
+
+local function AsEntry(s)
+	if isstring(s) then return { { s } } end
+	if istable(s) and isstring(s[1]) then return { s } end -- a single hit
+	return s
+end
+
+function RI.ResolveRoleSound(info)
+	if info.sound then return AsEntry(info.sound) end
+	local key = RoleKey(info.role)
+	local kind = info.roleKind or RI.GuessRoleKind(info.role)
+	return CustomSound(string.gsub(key, "%s+", "_"))
+		or AsEntry(RI.RoleSoundsByName[key])
+		or CustomSound(kind)
+		or AsEntry(RI.RoleSounds[kind])
+		or AsEntry(RI.RoleSounds.neutral)
+end
+
+function RI.PlayRoleSound(entry)
+	local lp = LocalPlayer()
+	if not IsValid(lp) or not istable(entry) then return end
+	RI.StopRoleSound(0)
+	RI.RoleSoundEmitted = {}
+	for _, hit in ipairs(entry) do
+		local path = hit[1] or hit.sound
+		if not path then continue end
+		local function play()
+			if not IsValid(lp) then return end
+			if hit.start or hit.file then
+				-- file channel: can start partway into the sound
+				sound.PlayFile("sound/" .. path, "noplay noblock", function(ch)
+					if not IsValid(ch) then return end
+					if (hit.start or 0) > 0 then ch:SetTime(hit.start) end
+					ch:SetVolume(hit.volume or 1)
+					if hit.pitch then ch:SetPlaybackRate(hit.pitch / 100) end
+					ch:Play()
+					RI.RoleSoundChannels = RI.RoleSoundChannels or {}
+					RI.RoleSoundChannels[#RI.RoleSoundChannels + 1] = ch
+				end)
+				return
+			end
+			lp:EmitSound(path, 0, hit.pitch or 100, hit.volume or 1, CHAN_STATIC)
+			RI.RoleSoundEmitted = RI.RoleSoundEmitted or {}
+			RI.RoleSoundEmitted[path] = true
+		end
+		if (hit.delay or 0) > 0 then timer.Simple(hit.delay, play) else play() end
+	end
+end
+
+RI.RoleSoundFadeOut = 0.25 -- the role sound fades out over this long, ending right as the white flash hits
+
+-- stop the role reveal sound with a fade. channelsOnly: leave emitted (non-file) sounds playing for now
+function RI.StopRoleSound(fadeTime, channelsOnly)
+	local chans = RI.RoleSoundChannels or {}
+	RI.RoleSoundChannels = {}
+	local lp = LocalPlayer()
+	if not channelsOnly then
+		if IsValid(lp) then
+			for path in pairs(RI.RoleSoundEmitted or {}) do lp:StopSound(path) end
+		end
+		RI.RoleSoundEmitted = {}
+	end
+	fadeTime = fadeTime or 0.15
+	if fadeTime <= 0 then
+		for _, ch in ipairs(chans) do if IsValid(ch) then ch:Stop() end end
+		return
+	end
+	local start = RealTime()
+	local name = "RoundIntro_RoleSoundFade" .. tostring(start)
+	timer.Create(name, 0.02, 0, function()
+		local v = 1 - math.Clamp((RealTime() - start) / fadeTime, 0, 1)
+		for _, ch in ipairs(chans) do if IsValid(ch) then ch:SetVolume(math.min(ch:GetVolume(), v)) end end
+		if v <= 0 then
+			for _, ch in ipairs(chans) do if IsValid(ch) then ch:Stop() end end
+			timer.Remove(name)
+		end
+	end)
+end
+
+concommand.Add("lament_rolesound_test", function(_, _, args)
+	local what = args[1] or "neutral"
+	local kind = RI.RoleSounds[what] and what or nil
+	RI.PlayRoleSound(RI.ResolveRoleSound({ role = kind and "" or what, roleKind = kind }))
+end)
+
 local function Close()
 	if IsValid(RI.Panel) then RI.Panel:Remove() end
 	RI.Panel = nil
 	RI.Key = nil
 end
 
+local WAKE_SOUND = "rem_newroundreveal.wav" -- plays for everyone on the white wake-up flash
+
 local function BeginWake()
+	-- only once per flash (both the panel and Sync can end the intro on the same frame)
+	if RI.WakeStart and CurTime() - RI.WakeStart < WAKE_TIME then return end
 	RI.WakeStart = CurTime()
+	RI.StopRoleSound(0.15) -- the role sound ends with the white flash
+	surface.PlaySound(WAKE_SOUND)
 end
 
 function RI.Sync(info)
@@ -576,8 +743,8 @@ function RI.Sync(info)
 				end
 				if not self.RevealSound then
 					self.RevealSound = true
-					surface.PlaySound("rem_newroundreveal.wav")
-					surface.PlaySound("buttons/lightswitch2.wav")
+					hook.Run("LAMENT_RoleRevealed", inf)
+					RI.PlayRoleSound(RI.ResolveRoleSound(inf))
 				end
 			end
 			self.Char.Lit = target
@@ -585,6 +752,12 @@ function RI.Sync(info)
 			-- take the character off the frame before the white wash-out starts
 			local dur = inf.duration or 10
 			self.Char:SetVisible(tt + RealFrameTime() < dur - WASH_TIME)
+
+			-- quick fade on the role sound so it's gone by the white flash
+			if not self.RoleSoundFading and tt >= dur - WASH_TIME - RI.RoleSoundFadeOut then
+				self.RoleSoundFading = true
+				RI.StopRoleSound(RI.RoleSoundFadeOut)
+			end
 
 			-- done: close and start the wake-up fade
 			if tt >= (inf.duration or 10) then
@@ -596,11 +769,28 @@ function RI.Sync(info)
 	end
 
 	RI.Panel.Info = info
+	RI.LastInfo = info
 end
 
 function RI.IsActive()
 	return IsValid(RI.Panel)
 end
+
+-- hide the chat box (zchat, hg.chat) while the intro is up, including the white wake-up flash.
+-- checked every frame so it also closes the chat if someone opens it mid-intro.
+hook.Add("Think", "RoundIntro_HideChat", function()
+	local chatbox = hg.chat
+	if not IsValid(chatbox) then return end
+	local hide = RI.IsActive() or RI.WakeStart ~= nil
+	if hide then
+		if chatbox.GetActive and chatbox:GetActive() then chatbox:SetActive(false) end
+		if chatbox:IsVisible() then chatbox:SetVisible(false) end
+		RI.ChatHidden = true
+	elseif RI.ChatHidden then
+		chatbox:SetVisible(true)
+		RI.ChatHidden = nil
+	end
+end)
 
 function RI.Stop()
 	Close()
@@ -713,6 +903,8 @@ function hg.RoundStart.DrawTitle(content, opts)
 		extra = extra,
 		objective = content.objective,
 		pose = content.pose or RI.GuessPose(role),
+		roleKind = content.roleKind,
+		sound = content.roleSound,
 	})
 end
 

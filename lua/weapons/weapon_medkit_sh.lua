@@ -280,6 +280,10 @@ if SERVER then
 		-- block the automatic switch to the new item for a short moment
 		ply:SetNW2Float("ZC_MedkitHold", CurTime() + 0.75)
 		local wep = ply:Give(item.class, true)
+		-- homigrad's "pickupHuy" WeaponEquip hook force-selects anything you're given two ticks later
+		-- (straight SetActiveWeapon, so the hold block above can't stop it). this is its opt-out flag;
+		-- it's read on the next tick, so setting it right after Give is in time.
+		if IsValid(wep) then wep.DontEquipInstantly = true end
 		if not IsValid(wep) then wep = ply:GetWeapon(item.class) end
 		if not IsValid(wep) then return end
 		table.remove(self.MedContents, index)

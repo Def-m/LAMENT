@@ -1532,6 +1532,13 @@ function SWEP:BandageTPIKThink()
 	local elapsed = CurTime() - self.bandageTPIKStart
 	local useTime = self.bandageTPIKUseTime or self.BandageUseTime
 	local sndOwner = IsValid(owner.FakeRagdoll) and owner.FakeRagdoll or owner
+	self:PlayBandageTPIKSounds(elapsed, useTime, sndOwner)
+
+	if self.bandageTPIKEndTime and CurTime() >= self.bandageTPIKEndTime then self:FinishBandageTPIK() end
+end
+
+-- sounds during the "use" animation; items based on the bandage (e.g. the splint) override this
+function SWEP:PlayBandageTPIKSounds(elapsed, useTime, sndOwner)
 	if self.bandageTPIKSounds < 1 and elapsed >= useTime * 0.08 then
 		self.bandageTPIKSounds = 1
 		sndOwner:EmitSound("weapons/nmrih/items/bandage/bandage_unravel_0" .. math.random(1, 2) .. ".wav", 60, 100)
@@ -1540,8 +1547,6 @@ function SWEP:BandageTPIKThink()
 		self.bandageTPIKSounds = 2
 		sndOwner:EmitSound("weapons/nmrih/items/bandage/bandage_apply_0" .. math.random(1, 2) .. ".wav", 60, 100)
 	end
-
-	if self.bandageTPIKEndTime and CurTime() >= self.bandageTPIKEndTime then self:FinishBandageTPIK() end
 end
 
 function SWEP:Camera(eyePos, eyeAng, view, vellen)

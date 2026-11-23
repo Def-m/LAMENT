@@ -8,7 +8,7 @@ local STAGE_1_MAX_DIST    = 120
 local STAGE_1_MIN_HEIGHT  = -20
 local STAGE_1_MAX_HEIGHT  = 0
 local STAGE_1_LOOK_HEIGHT = 15
-local BLACK_FADE_DURATION = 5
+local BLACK_FADE_DURATION = 4.5
 local BLACK_FADE_OUT_DURATION = 0.8
 local REALISH_BLACK_FADE_DURATION = 0.35
 local REALISH_BLACK_FADE_OUT_DURATION = 0.45
@@ -797,7 +797,7 @@ local function CinematicDeathBackground()
             return
         end
 
-        -- monochrome filter: desaturate the scene, darken it toward black over the fade,
+        -- monochrome filter: desaturate the scene while you're dead (no black fade),
         -- then release back to color as the fade-out finishes
         local monoStrength = 1 - fadeOutProgress
         DrawColorModify({
@@ -812,10 +812,6 @@ local function CinematicDeathBackground()
             ["$pp_colour_mulb"]       = 0,
         })
 
-        local darkAlpha = math.floor(fadeProgress * (1 - fadeOutProgress) * 255)
-        surface.SetDrawColor(0, 0, 0, darkAlpha)
-        surface.DrawRect(0, 0, sw, sh)
-
         local textTopY = math.floor(sh * 0.16)
 
         if not DeathScreenEnabled() then
@@ -826,13 +822,15 @@ local function CinematicDeathBackground()
             return
         end
 
-        if fadeProgress < 1 and IsValid(ragdollEnt) then
+        -- your body as a black silhouette; it fades away as the color comes back
+        local silhouette = 1 - fadeOutProgress
+        if silhouette > 0.01 and IsValid(ragdollEnt) then
             cam.Start3D(deathCamPos, deathCamAng)
                 cam.IgnoreZ(true)
                 render.SuppressEngineLighting(true)
                 render.MaterialOverride(matWhite)
                 render.SetColorModulation(0, 0, 0)
-                render.SetBlend(1)
+                render.SetBlend(silhouette)
                 ragdollEnt:DrawModel()
                 render.SetBlend(1)
                 render.SetColorModulation(1, 1, 1)

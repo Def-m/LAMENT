@@ -7,8 +7,12 @@ local function screen_scale_2(num)
 end
 --//
 
+MODE.RoundCommenceSound = "lament/lam_hmcdroundcommence.mp3" -- LAMENT homicide round commence music
+MODE.RoundCommenceFallback = "rem_newroundcommence.mp3"     -- used if the file above is missing
+MODE.RoundCommenceLayers = 4 -- copies played on top of each other for extra volume (1 = normal)
+MODE.RoundCommenceStart = 0.5 -- seconds into the track to start from
 MODE.TypeSounds = {
-	["standard"] = "rem_newroundcommence.mp3",
+	["standard"] = MODE.RoundCommenceSound,
 	["suicidelunatic"] = "allah.mp3",
 }
 
@@ -25,20 +29,45 @@ local function PlayRoundBeginSound(roundType, sequence)
 	if not IsValid(lply) then return end
 
 	MODE.Type = roundType or "standard"
-	local roundSound = MODE.TypeSounds[MODE.Type] or "rem_newroundcommence.mp3"
+	local roundSound = MODE.TypeSounds[MODE.Type] or MODE.RoundCommenceSound
 	if istable(roundSound) then roundSound = table.Random(roundSound) end
+	if not file.Exists("sound/" .. roundSound, "GAME") then roundSound = MODE.RoundCommenceFallback end
 
 	lply:SetDSP(0)
 	lply:ConCommand("soundfade 0 1")
 	MODE.RoundBeginSoundStartTime = CurTime()
+	MODE.RoundBeginRevealFade = nil
 
-	sound.PlayFile("sound/" .. roundSound, "noplay noblock", function(channel)
-		if not IsValid(channel) then return end
-		if MODE.RoundBeginSoundSequence ~= sequence then channel:Stop() return end
-		channel:Play()
-		MODE.RoundBeginSoundChannel = channel
-	end)
+	-- several copies of the track on top of each other (louder), driven together as one "channel"
+	local group = { chans = {}, vol = 1 }
+	function group:IsValid() return true end
+	function group:Stop()
+		for _, c in ipairs(self.chans) do if IsValid(c) then c:Stop() end end
+		self.stopped = true
+	end
+	function group:SetVolume(v)
+		self.vol = v
+		for _, c in ipairs(self.chans) do if IsValid(c) then c:SetVolume(v) end end
+	end
+	MODE.RoundBeginSoundChannel = group
+
+	for _ = 1, math.max(1, MODE.RoundCommenceLayers or 1) do
+		sound.PlayFile("sound/" .. roundSound, "noplay noblock", function(channel)
+			if not IsValid(channel) then return end
+			if MODE.RoundBeginSoundSequence ~= sequence or group.stopped then channel:Stop() return end
+			channel:SetVolume(group.vol)
+			if (MODE.RoundCommenceStart or 0) > 0 then channel:SetTime(MODE.RoundCommenceStart) end
+			channel:Play()
+			group.chans[#group.chans + 1] = channel
+		end)
+	end
 end
+
+-- the round commence music fades out into the reveal sound when your role is revealed
+local REVEAL_MUSIC_FADE = 0.35 -- seconds
+hook.Add("LAMENT_RoleRevealed", "HMCD_StopRoundBeginMusic", function()
+	MODE.RoundBeginRevealFade = CurTime()
+end)
 
 net.Receive("HMCD_RoundBeginSound", function()
 	PlayRoundBeginSound(net.ReadString(), net.ReadUInt(16))
@@ -519,7 +548,15 @@ if lply:Team() == TEAM_SPECTATOR then return end
 			MODE.RoundBeginSoundChannel = nil
 		else
 			local soundFade = math.Clamp((HMCD_ScreenDuration - soundElapsed) / 1.5, 0, 1)
-			MODE.RoundBeginSoundChannel:SetVolume(soundFade)
+			if MODE.RoundBeginRevealFade then
+				soundFade = soundFade * (1 - math.Clamp((CurTime() - MODE.RoundBeginRevealFade) / REVEAL_MUSIC_FADE, 0, 1))
+			end
+			if soundFade <= 0 and MODE.RoundBeginRevealFade then
+				MODE.RoundBeginSoundChannel:Stop()
+				MODE.RoundBeginSoundChannel = nil
+			else
+				MODE.RoundBeginSoundChannel:SetVolume(soundFade)
+			end
 		end
 	end
 	if not StartTime then return end
@@ -670,6 +707,15 @@ if lply:Team() == TEAM_SPECTATOR then return end
 			extra = extra,
 			objective = Objective,
 			pose = pose,
+			roleKind = lply.isTraitor and "killer" or (lply.isGunner and "protector") or "victim",
+			-- LAMENT role reveal sounds (sound/lam/), four copies on top of each other for extra volume
+			-- (1.0 is the most a single sound can be played at). The judge one starts 2 seconds in.
+			sound = (function()
+				local snd = lply.isTraitor and "lament/lam_executioner.mp3" or (lply.isGunner and "lament/lam_judge.mp3") or "lament/lam_victim.mp3"
+				local start = lply.isGunner and 2 or 0
+				local hit = { snd, volume = 1, start = start, file = true }
+				return { hit, hit, hit, hit }
+			end)(),
 		})
 		return
 	end

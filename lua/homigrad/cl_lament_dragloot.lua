@@ -16,7 +16,9 @@ local CFG = {
     MaxDist     = 125,      -- same as the old menu / server check
     TakeGap     = 0.55,     -- server has a 0.5s cooldown on ply_take_item, so space requests out
     ConfirmWait = 1.5,      -- if the item is still there after this long, it pops back home
-    HandHeight  = 0.22,     -- hand sprite height as a fraction of screen height
+    HandHeight  = 0.19,     -- hand sprite height as a fraction of screen height
+    FakeFadeSpeed = 8,      -- how fast an empty fakeout box fades away once searched (8 = ~0.12s)
+    HandGrabAlpha = 0.45,   -- hand opacity while grabbing: searching a [?] or dragging an item (1 = solid)
 
     -- base equip sounds (what the game plays when you equip that kind of thing)
     SndDrawDefault = "homigrad/weapons/draw_rifle.mp3",     -- homigrad_base SWEP.DeploySnd
@@ -54,7 +56,7 @@ local HOT_OPEN = { 0.39, 0.46 }   -- palm centre on the 512x512 sprite
 local HOT_GRAB = { 0.50, 0.58 }   -- fist centre
 
 local function U(n) return math.floor(n * math.min(ScrW(), ScrH()) / 1000) end
-local function tileSize() return U(120) end
+local function cellSize() return U(110) end -- one grid cell; items are 1-3 cells wide, 1-2 tall
 
 local MONO = "IBM Plex Mono"
 local function fonts()
@@ -132,16 +134,37 @@ local function collectItems(ent)
     return out
 end
 
+-- item weight / size, same rules as the old grid menu (OpenInv in sh_inventory.lua)
+local SMALL_THINGS = { hg_flashlight = true, hg_brassknuckles = true } -- always 1x1
+local function lootWeight(tab, i, thing)
+    if SMALL_THINGS[i] then return 1 end
+    if tab == "Weapons" then
+        local wep = weapons.Get(i)
+        if wep then return wep.weight or wep.Weight or ((wep.weaponInvCategory == 1) and 8 or 3) end
+        return 3
+    elseif tab == "Ammo" then
+        local amt = tonumber(istable(thing) and thing[1] or thing) or 1
+        return math.Clamp((game.GetAmmoForce(tonumber(i) or 0) * amt) / 1500, 0.8, 6)
+    elseif tab == "Armor" then
+        return (hg.armor and hg.armor[i] and hg.armor[i][thing] and hg.armor[i][thing].mass) or 4
+    end
+    return 1
+end
+
+-- how many grid cells (wide, tall) the item takes up
+local function lootSize(tab, i, thing)
+    if SMALL_THINGS[i] then return 1, 1 end
+    if tab == "Armor" then return 2, 2 end
+    local w = lootWeight(tab, i, thing)
+    if w >= 8 then return 3, 2 end
+    if w >= 5 then return 2, 2 end
+    if w >= 2.5 then return 2, 1 end
+    return 1, 1
+end
+
 -- search time scales with how bulky the thing is, like the old menu
 local function searchTime(it)
-    if it.tab == "Armor" then return 1.6 end
-    if it.tab == "Weapons" then
-        local wep = weapons.Get(it.i)
-        if wep then return math.Clamp(0.45 + (wep.weight or wep.Weight or ((wep.weaponInvCategory == 1) and 8 or 3)) * 0.24, 0.65, 4) end
-        return 0.9
-    end
-    if it.tab == "Ammo" then return 0.8 end
-    return 0.7
+    return math.Clamp(0.45 + lootWeight(it.tab, it.i, it.thing) * 0.24, 0.65, 4)
 end
 
 local tabLabel = { Weapons = "weapon", Ammo = "ammo", Armor = "armor", Attachments = "attachment" }
@@ -227,7 +250,8 @@ function PANEL:Init()
     self:SetCursor("blank")
 
     self.items, self.held, self.handScale = {}, nil, 1
-    self.tile = tileSize()
+    self.tile = cellSize()
+    self.gap = U(8)
     self.nextSend = CurTime() + CFG.TakeGap   -- OpenInventory sets a 0.5s server cooldown
     self.nextScan = 0
     self.opened = RealTime()
@@ -250,11 +274,38 @@ function PANEL:Init()
     play(CFG.SndGrab)
 end
 
--- how many tiles of size T fit in the area (cells leave room for the name under each tile)
-function PANEL:Grid(T)
-    local a = self.area
-    local cellW, cellH = T * 1.4, T * 1.42
-    return math.max(1, math.floor(a.w / cellW)), math.max(1, math.floor(a.h / cellH)), cellW, cellH
+-- how many cells of size C (plus the gap between them) fit in the area
+function PANEL:Grid(C)
+    local a, g = self.area, self.gap
+    return math.max(3, math.floor((a.w + g) / (C + g))), math.max(2, math.floor((a.h + g) / (C + g)))
+end
+
+-- would these blocks ({w, h} each) all fit in a cols x rows grid? (biggest first, first free spot)
+local function packs(blocks, cols, rows)
+    local used = {}
+    table.sort(blocks, function(a, b) return a[1] * a[2] > b[1] * b[2] end)
+    for _, b in ipairs(blocks) do
+        local placed = false
+        for y = 1, rows - b[2] + 1 do
+            for x = 1, cols - b[1] + 1 do
+                local free = true
+                for yy = y, y + b[2] - 1 do
+                    for xx = x, x + b[1] - 1 do
+                        if used[yy * 100 + xx] then free = false break end
+                    end
+                    if not free then break end
+                end
+                if free then
+                    for yy = y, y + b[2] - 1 do for xx = x, x + b[1] - 1 do used[yy * 100 + xx] = true end end
+                    placed = true
+                    break
+                end
+            end
+            if placed then break end
+        end
+        if not placed then return false end
+    end
+    return true
 end
 
 function PANEL:SetEnt(ent)
@@ -262,17 +313,60 @@ function PANEL:SetEnt(ent)
     ent.foundloot = ent.foundloot or {}
     ent.dragLootLayout = ent.dragLootLayout or {}
 
-    -- shrink the tiles if a body is carrying more than fits
-    local count = table.Count(collectItems(ent) or {})
-    local T = tileSize()
-    while T > U(55) do
-        local cols, rows = self:Grid(T)
-        if cols * rows >= count then break end
-        T = math.floor(T * 0.9)
+    -- items take 1x1 / 2x1 / 2x2 / 3x2 cells like the old grid menu;
+    -- shrink the cells if a body is carrying more than fits
+    local blocks, cells = {}, 0
+    local present = collectItems(ent) or {}
+    for _, it in pairs(present) do
+        local bw, bh = lootSize(it.tab, it.i, it.thing)
+        blocks[#blocks + 1] = { bw, bh }
+        cells = cells + bw * bh
     end
-    if ent.dragLootTile ~= T then ent.dragLootLayout = {} ent.dragLootTile = T end
-    self.tile = T
-    self.qfont = qFont(T)
+    -- fakeouts, like the old grid menu: empty [?] boxes that turn out to be nothing.
+    -- rolled once per container, so reopening it shows the same ones (minus the ones you dug out)
+    if not ent.dragLootFakes then
+        ent.dragLootFakes = {}
+        local real = #blocks
+        local count = real > 0 and math.random(0, math.Clamp(math.ceil(real * 0.35), 1, 5)) or 0
+        for n = 1, count do
+            ent.dragLootFakes[n] = {
+                w = math.random(1, 3) == 1 and 2 or 1,
+                h = math.random(1, 4) == 1 and 2 or 1,
+                time = math.Rand(0.7, 1.8),
+            }
+        end
+    end
+    for n, f in ipairs(ent.dragLootFakes) do
+        if not f.revealed then
+            present["fake:" .. n] = true
+            blocks[#blocks + 1] = { f.w, f.h }
+            cells = cells + f.w * f.h
+        end
+    end
+
+    -- forget spots of things that were taken while the menu was closed
+    for key in pairs(ent.dragLootLayout) do
+        if not present[key] then ent.dragLootLayout[key] = nil end
+    end
+    local cs = cellSize()
+    while cs > U(36) do
+        local cols, rows = self:Grid(cs)
+        if packs(table.Copy(blocks), cols, rows) then break end
+        cs = math.floor(cs * 0.92)
+    end
+    local cols, rows = self:Grid(cs)
+    if ent.dragLootCell ~= cs or ent.dragLootCols ~= cols then
+        ent.dragLootLayout = {}
+        ent.dragLootCell, ent.dragLootCols = cs, cols
+    end
+    self.cell, self.cols, self.rows = cs, cols, rows
+    -- scattered at random when there's room; packed neatly from the top-left when it's crowded
+    self.tight = cells > cols * rows * 0.55
+    self.tile = cs
+    self.qfont = qFont(cs)
+    local a, g = self.area, self.gap
+    self.gridX = math.floor(a.x + (a.w - (cols * cs + (cols - 1) * g)) / 2)
+    self.gridY = math.floor(a.y + (a.h - (rows * cs + (rows - 1) * g)) / 2)
 
     if ent:IsPlayer() or ent:IsRagdoll() then
         self.title = string.lower((ent.GetPlayerName and ent:GetPlayerName()) or "someone")
@@ -284,58 +378,91 @@ function PANEL:SetEnt(ent)
     self:Scan()
 end
 
--- Each item gets its own cell (with a little jitter), remembered on the entity so reopening looks the same.
-function PANEL:Home(key)
-    local a, L, T = self.area, self.ent.dragLootLayout, self.tile
-    local cols, rows, cellW, cellH = self:Grid(T)
-    if L[key] and not L[key][3] then L[key] = nil end -- old layout format
-    if not L[key] then
-        local taken, free = {}, {}
-        for _, c in pairs(L) do if c[3] then taken[c[1]] = true end end
-        for c = 0, cols * rows - 1 do if not taken[c] then free[#free + 1] = c end end
-        local cell = #free > 0 and free[math.random(#free)] or math.random(0, cols * rows - 1)
-        L[key] = { cell, math.Rand(-0.08, 0.08), math.Rand(-0.06, 0.06) }
+-- Each item gets a bw x bh block of cells at a random free spot (like the old grid menu),
+-- remembered on the entity so reopening looks the same. Returns the block's centre and pixel size.
+function PANEL:Home(key, bw, bh, noOverlap)
+    local L, cs, g, cols, rows = self.ent.dragLootLayout, self.cell, self.gap, self.cols, self.rows
+    local used = {}
+    for k, b in pairs(L) do
+        if k ~= key and b.w then
+            for yy = b.y, b.y + b.h - 1 do for xx = b.x, b.x + b.w - 1 do used[yy * 100 + xx] = true end end
+        end
     end
-    local c = L[key]
-    local cx, cy = c[1] % cols, math.floor(c[1] / cols) % rows
-    local ox = a.x + (a.w - cols * cellW) / 2
-    local oy = a.y + (a.h - rows * cellH) / 2
-    return ox + (cx + 0.5 + c[2]) * cellW, oy + (cy + 0.5 + c[3]) * cellH - T * 0.1
+    local function fits(x, y)
+        if x < 1 or y < 1 or x + bw - 1 > cols or y + bh - 1 > rows then return false end
+        for yy = y, y + bh - 1 do for xx = x, x + bw - 1 do if used[yy * 100 + xx] then return false end end end
+        return true
+    end
+
+    local b = L[key]
+    if not (b and b.w == bw and b.h == bh and fits(b.x, b.y)) then
+        local spots = {}
+        for y = 1, rows do for x = 1, cols do if fits(x, y) then spots[#spots + 1] = { x, y } end end end
+        if #spots == 0 and noOverlap then return nil end
+        local spot = (self.tight and spots[1]) or spots[math.random(math.max(#spots, 1))] or { 1, 1 } -- no room at all: overlap
+        b = { x = spot[1], y = spot[2], w = bw, h = bh }
+        L[key] = b
+    end
+
+    local pw, ph = bw * cs + (bw - 1) * g, bh * cs + (bh - 1) * g
+    local x0 = self.gridX + (b.x - 1) * (cs + g)
+    local y0 = self.gridY + (b.y - 1) * (cs + g)
+    return x0 + pw / 2, y0 + ph / 2, pw, ph
 end
 
 -- Re-read the inventory netvar; spot items that arrived in our pocket.
 function PANEL:Scan()
     local data = collectItems(self.ent)
     if not data then return end
-    for key, it in pairs(data) do
+    -- place new things biggest first so the big blocks always find room
+    local order = table.GetKeys(data)
+    table.sort(order, function(a, b)
+        local aw, ah = lootSize(data[a].tab, data[a].i, data[a].thing)
+        local bw, bh = lootSize(data[b].tab, data[b].i, data[b].thing)
+        if aw * ah ~= bw * bh then return aw * ah > bw * bh end
+        return a < b
+    end)
+    for _, key in ipairs(order) do
+        local it = data[key]
         local st = self.items[key]
         if not st then
-            local hx, hy = self:Home(key)
-            st = { key = key, x = hx, y = hy, hx = hx, hy = hy, a = 0, hl = 0, born = RealTime() }
+            local bw, bh = lootSize(it.tab, it.i, it.thing)
+            local hx, hy, pw, ph = self:Home(key, bw, bh)
+            st = { key = key, x = hx, y = hy, hx = hx, hy = hy, pw = pw, ph = ph, a = 0, hl = 0, born = RealTime() }
             self.items[key] = st
         end
         st.tab, st.i, st.thing, st.text = it.tab, it.i, it.thing, it.text
         st.searchTime = st.searchTime or searchTime(it)
     end
+    for n, f in ipairs(self.ent.dragLootFakes or {}) do
+        local key = "fake:" .. n
+        if not f.revealed and not self.items[key] then
+            local hx, hy, pw, ph = self:Home(key, f.w, f.h, true)
+            if hx then self.items[key] = { key = key, fake = n, x = hx, y = hy, hx = hx, hy = hy, pw = pw, ph = ph,
+                a = 0, hl = 0, born = RealTime(), searchTime = f.time, text = "" } end
+        end
+    end
     for key, st in pairs(self.items) do
-        if not data[key] and not st.gone then
+        if not st.fake and not data[key] and not st.gone then
             if st.pending then
                 play(equipSound(st.tab, st.i))   -- it's ours now
             end
             if self.held == key then self.held = nil end
             st.gone = RealTime()
+            self.ent.dragLootLayout[key] = nil -- its cells are free again
         end
     end
 end
 
 function PANEL:Found(st)
+    if st.fake then return false end -- a fakeout never has anything in it
     return self.ent.foundloot[st.i]
 end
 
 function PANEL:Counts()
     local total, hidden = 0, 0
     for _, st in pairs(self.items) do
-        if not st.gone and not st.pending then
+        if not st.gone and not st.pending and not st.vanish then
             total = total + 1
             if not self:Found(st) then hidden = hidden + 1 end
         end
@@ -344,9 +471,8 @@ function PANEL:Counts()
 end
 
 function PANEL:ItemAt(mx, my)
-    local half = self.tile * 0.5
     for _, st in pairs(self.items) do
-        if not st.gone and not st.pending and math.abs(mx - st.x) <= half and math.abs(my - st.y) <= half then
+        if not st.gone and not st.pending and not st.vanish and math.abs(mx - st.x) <= st.pw * 0.5 and math.abs(my - st.y) <= st.ph * 0.5 then
             return st
         end
     end
@@ -452,9 +578,17 @@ function PANEL:Think()
         if s.progress >= 1 then
             self.searching = nil
             s.progress = 0
-            ent.foundloot[s.i] = true
-            s.flash = rt
-            play(CFG.SndFound)
+            if s.fake then
+                -- nothing in there: the box fades away and its cells free up
+                ent.dragLootFakes[s.fake].revealed = true
+                ent.dragLootLayout[s.key] = nil
+                s.vanish = rt
+                play(CFG.SndGrab)
+            else
+                ent.foundloot[s.i] = true
+                s.flash = rt
+                play(CFG.SndFound)
+            end
         end
     end
 
@@ -476,6 +610,8 @@ function PANEL:Think()
     local target = self.grabbing and 0.88 or 1
     if self.overPocket then target = 1.08 end
     self.handScale = Lerp(math.min(1, ft * 14), self.handScale, target)
+    -- the hand goes see-through while grabbing (searching a [?] or dragging) so you can see under it
+    self.handAlpha = Lerp(math.min(1, ft * 12), self.handAlpha or 1, self.grabbing and CFG.HandGrabAlpha or 1)
 
     for key, st in pairs(self.items) do
         local hot = st == hover or key == self.held or key == self.searching
@@ -484,6 +620,9 @@ function PANEL:Think()
         if key == self.held then
             st.ox, st.oy = Lerp(math.min(1, ft * 10), st.ox or 0, 0), Lerp(math.min(1, ft * 10), st.oy or 0, 0)
             st.x, st.y = mx + st.ox, my + st.oy
+        elseif st.vanish then
+            st.a = math.max(0, st.a - ft * CFG.FakeFadeSpeed)
+            if st.a <= 0 then self.items[key] = nil end
         elseif st.gone or st.pending then
             st.x = Lerp(math.min(1, ft * 10), st.x, p.cx)
             st.y = Lerp(math.min(1, ft * 10), st.y, ScrH() + 40)
@@ -502,7 +641,7 @@ end
 ---------------------------------------------------------------------------
 
 function PANEL:DrawTile(st)
-    local T, rt = self.tile, RealTime()
+    local rt = RealTime()
     local held = self.held == st.key
     local searching = self.searching == st.key
     local found = self:Found(st)
@@ -510,58 +649,63 @@ function PANEL:DrawTile(st)
     -- tiles pop in one after another when the box opens
     local a = st.a * ease((rt - self.opened - 0.15 - ((st.hx - self.area.x) / self.area.w) * 0.25) / 0.25)
     if a <= 0 then return end
-    local s = held and math.floor(T * 0.9) or T
+    local k = held and 0.9 or 1
+    local w, h = math.floor(st.pw * k), math.floor(st.ph * k)
 
     local jx, jy = 0, 0
     if searching then jx, jy = math.random(-2, 2), math.random(-2, 2) end -- the box gets jostled while you dig
-    local x0, y0 = math.floor(st.x - s / 2 + jx), math.floor(st.y - s / 2 + jy)
+    local x0, y0 = math.floor(st.x - w / 2 + jx), math.floor(st.y - h / 2 + jy)
+    local labelH = U(20)
 
     -- body
     local bg = hl > 0.5 and C.panelHi or C.btn
-    draw.RoundedBox(3, x0, y0, s, s, ColorAlpha(bg, bg.a * a))
+    draw.RoundedBox(3, x0, y0, w, h, ColorAlpha(bg, bg.a * a))
 
     local prog = st.progress or 0
     if not found then
         if prog > 0 then
             -- dig progress rises from the bottom and the item shows through it
-            local fh = math.floor(s * prog)
+            local fh = math.floor(h * prog)
             surface.SetDrawColor(255, 255, 255, 14 * a)
-            surface.DrawRect(x0, y0 + s - fh, s, fh)
-            render.SetScissorRect(x0, y0 + s - fh, x0 + s, y0 + s, true)
-                drawIcon(st, x0 + s / 2, y0 + s / 2, s * 0.8, s * 0.7, 230 * a)
+            surface.DrawRect(x0, y0 + h - fh, w, fh)
+            render.SetScissorRect(x0, y0 + h - fh, x0 + w, y0 + h, true)
+                drawIcon(st, x0 + w / 2, y0 + (h - labelH) / 2 + U(2), w * 0.82, (h - labelH) * 0.82, 230 * a)
             render.SetScissorRect(0, 0, 0, 0, false)
             -- progress strip on the left grows upward (same accent strip as the menu)
             surface.SetDrawColor(C.accent.r, C.accent.g, C.accent.b, 230 * a)
-            surface.DrawRect(x0, y0 + s - fh, U(3), fh)
+            surface.DrawRect(x0, y0 + h - fh, U(3), fh)
         end
-        draw.SimpleText("?", self.qfont, x0 + s / 2, y0 + s / 2,
+        draw.SimpleText("?", self.qfont, x0 + w / 2, y0 + h / 2,
             ColorAlpha(hl > 0.5 and C.text or C.dim, 255 * a * (1 - prog * 0.85)), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        if searching then
+            draw.SimpleText(fitText("searching...", "LAMENT.DL.Key", w - U(12)), "LAMENT.DL.Key", x0 + w / 2, y0 + h - U(5),
+                ColorAlpha(C.label, 230 * a), TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM)
+        end
     else
-        if not drawIcon(st, x0 + s / 2, y0 + s * 0.46, s * 0.8, s * 0.62, 255 * a) then
-            draw.SimpleText(string.upper(string.sub(st.text or "?", 1, 1)), self.qfont, x0 + s / 2, y0 + s * 0.46,
+        if not drawIcon(st, x0 + w / 2, y0 + (h - labelH) / 2 + U(2), w * 0.82, (h - labelH) * 0.82, 255 * a) then
+            draw.SimpleText(string.upper(string.sub(st.text or "?", 1, 1)), self.qfont, x0 + w / 2, y0 + (h - labelH) / 2,
                 ColorAlpha(C.idle, 255 * a), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
-        -- small category tag in the corner
-        draw.SimpleText(tabLabel[st.tab] or "", "LAMENT.DL.Key", x0 + s - U(6), y0 + s - U(4),
-            ColorAlpha(C.label, 200 * a), TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+        -- name along the bottom, small category tag in the top corner
+        draw.SimpleText(fitText(st.text or "", "LAMENT.DL.Tiny", w - U(14)), "LAMENT.DL.Tiny", x0 + U(7), y0 + h - U(4),
+            ColorAlpha(hl > 0.5 and C.text or C.idle, 255 * a), TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
+        if w > U(70) then
+            draw.SimpleText(tabLabel[st.tab] or "", "LAMENT.DL.Key", x0 + w - U(6), y0 + U(4),
+                ColorAlpha(C.label, 200 * a), TEXT_ALIGN_RIGHT, TEXT_ALIGN_TOP)
+        end
         if st.flash and rt - st.flash < 0.35 then
             surface.SetDrawColor(255, 255, 255, 90 * (1 - (rt - st.flash) / 0.35) * a)
-            surface.DrawRect(x0, y0, s, s)
+            surface.DrawRect(x0, y0, w, h)
         end
         -- accent strip on hover
         if hl > 0.01 then
             surface.SetDrawColor(C.accent.r, C.accent.g, C.accent.b, 210 * hl * a)
-            surface.DrawRect(x0, y0, U(3), s)
+            surface.DrawRect(x0, y0, U(3), h)
         end
     end
 
     surface.SetDrawColor(C.border.r, C.border.g, C.border.b, (45 + 100 * hl) * a)
-    surface.DrawOutlinedRect(x0, y0, s, s, 1)
-
-    -- name under the tile
-    local label = found and fitText(st.text or "", "LAMENT.DL.Tiny", T * 1.3) or (searching and "searching..." or "unsearched")
-    draw.SimpleText(label, "LAMENT.DL.Tiny", st.x, y0 + s + U(6),
-        ColorAlpha(found and (hl > 0.5 and C.text or C.idle) or C.label, 255 * a), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+    surface.DrawOutlinedRect(x0, y0, w, h, 1)
 end
 
 function PANEL:Paint(w, h)
@@ -659,7 +803,7 @@ function PANEL:Paint(w, h)
     local size = h * CFG.HandHeight * self.handScale
     local hyy = self.hy - (self.hover and size * 0.02 or 0)
     surface.SetMaterial(mat)
-    surface.SetDrawColor(255, 255, 255, 255)
+    surface.SetDrawColor(255, 255, 255, 255 * (self.handAlpha or 1))
     surface.DrawTexturedRect(self.hx - size * hot[1], hyy - size * hot[2], size, size)
     surface.SetAlphaMultiplier(1)
 end

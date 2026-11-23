@@ -1985,7 +1985,32 @@ local function ShowSummary(featured, winnerTeam, traitors)
 
 		timer.Simple(T_TRAITORS, function()
 			if not IsValid(traitorGroup) then return end
-			surface.PlaySound("rem_newroundreveal.wav")
+			-- LAMENT executioner sting: four copies on top of each other for extra volume, faded out
+			-- so it's gone by the time the traitors clear for the MVP screen
+			local stingChannels = {}
+			for _ = 1, 4 do
+				sound.PlayFile("sound/lament/lam_executioner.mp3", "noplay noblock", function(ch)
+					if not IsValid(ch) then return end
+					ch:SetVolume(1)
+					ch:Play()
+					stingChannels[#stingChannels + 1] = ch
+				end)
+			end
+			local stingStart = CurTime()
+			local fadeLen = 0.5
+			local fadeStart = (T_MVP - 0.6) - T_TRAITORS - fadeLen -- seconds into the sting
+			timer.Create("LAMENT_ExecutionerSting", 0.03, 0, function()
+				local v = 1 - math.Clamp((CurTime() - stingStart - fadeStart) / fadeLen, 0, 1)
+				for _, ch in ipairs(stingChannels) do
+					if IsValid(ch) then ch:SetVolume(v) end
+				end
+				if v <= 0 then
+					for _, ch in ipairs(stingChannels) do
+						if IsValid(ch) then ch:Stop() end
+					end
+					timer.Remove("LAMENT_ExecutionerSting")
+				end
+			end)
 			local nextDelay = 0
 			local lightOrder = {}
 			for i, data in ipairs(arranged) do
