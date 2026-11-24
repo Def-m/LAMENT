@@ -21,12 +21,6 @@ local ZB_FORCED_MODE_POOL = {
         ["standard"] = true,
         ["soe"] = true,
         ["improvision"] = true,
-	["active_shooter"] = true,
-	["dm"] = true,
-	["tdm"] = true,
-	["riot"] = true,
-	["juggernaut"] = true,
-	["criresp"] = true,
 	["gwars"] = true,
 }
 local ZB_NO_BACK_TO_BACK_MODES = {
