@@ -1443,6 +1443,7 @@ local RS_CARD_BAND_H = 0.27 -- height of the gradient band the MVPs stand on
 local RS_CARD_BOTTOM = 0.02 -- gap under the bands
 local RS_CARD_FEET_SINK = 0.6 -- how far down into the band the feet stand (0 = top edge of the band)
 local RS_BAND_REACH = 1.75 -- how high the gradient reaches, as a multiple of the band height
+local RS_BAND_FADE_PIECES = 6 -- how finely the band's eased top fade is built (more = smoother curve)
 local RS_CARD_EDGE_FADE = 0.22 -- how much of each side of a band fades out / blends into its neighbour
 
 local function BuildCard(parent, data, slot)
@@ -1805,9 +1806,12 @@ local function RS_BuildBandStrip(container, bySlot, mainX, mainW, startTime)
 	end
 	for _, seg in ipairs(segs) do seg.seed = math.Rand(0, 100) end
 
+	-- the strip runs all the way down to the bottom of the screen (the gap under the bands is filled
+	-- too), so the gradient never stops short of an edge
+	local bottomGap = math.floor(sh * RS_CARD_BOTTOM)
 	local strip = vgui.Create("DPanel", container)
-	strip:SetPos(0, sh - math.floor(sh * RS_CARD_BOTTOM) - stripH)
-	strip:SetSize(sw, stripH)
+	strip:SetPos(0, sh - bottomGap - stripH)
+	strip:SetSize(sw, stripH + bottomGap)
 	strip:SetMouseInputEnabled(false)
 	strip:MoveToBack() -- behind the cards...
 	if IsValid(container.BG) then container.BG:MoveToBack() end -- ...but in front of the black background
@@ -1820,13 +1824,31 @@ local function RS_BuildBandStrip(container, bySlot, mainX, mainW, startTime)
 		self.Rise = Lerp(FrameTime() * 6, self.Rise, CurTime() >= startTime and 1 or 0)
 		local rise = math.floor(bandH * self.Rise)
 		if rise <= 0 then return end
-		local texH = math.min(bh, math.floor(rise * RS_BAND_REACH))
+		local texH = math.min(bh, math.floor(rise * RS_BAND_REACH) + bottomGap)
 		local top = bh - texH
 
 		local pulse = 0.85 + 0.15 * math.sin(RealTime() * 1.7)
 		local darkA, colA = 140, 64 * pulse
 		local step = 4
 		local si = 1
+
+		-- one continuous gradient that eases out at the top (no hard top edge, no bands): the height is
+		-- split into a few pieces and each piece shows the part of the texture's ramp that continues
+		-- exactly where the piece below left off, following the curve 1 - smoothstep(d)
+		local pieces = {}
+		local n = RS_BAND_FADE_PIECES
+		local function fade(d) return 1 - d * d * (3 - 2 * d) end
+		local prevY = bh
+		for pi = 1, n do
+			local dLo, dHi = (pi - 1) / n, pi / n -- distance up from the bottom, 0..1
+			local aLo, aHi = fade(dLo), fade(dHi)
+			local yTop = bh - math.floor(texH * dHi + 0.5)
+			local ph = prevY - yTop
+			if ph > 0 and aLo > 0 then
+				pieces[#pieces + 1] = { y = yTop, h = ph, v0 = aHi / aLo, m = aLo }
+			end
+			prevY = yTop
+		end
 		surface.SetMaterial(RS_GradD)
 		for sx = 0, bw - 1, step do
 			local xc = sx + step / 2
@@ -1841,24 +1863,23 @@ local function RS_BuildBandStrip(container, bySlot, mainX, mainW, startTime)
 			local k = 1
 			local c = seg.color
 			local r, g, b = c.r, c.g, c.b
+			-- (the outer ends sit on the screen's edges, so they carry on off screen instead of fading out)
 			if prev then
 				local mix = (1 - sL) * 0.5
 				r, g, b = Lerp(mix, r, prev.color.r), Lerp(mix, g, prev.color.g), Lerp(mix, b, prev.color.b)
-			else
-				k = k * sL
 			end
 			if nxt then
 				local mix = (1 - sR) * 0.5
 				r, g, b = Lerp(mix, r, nxt.color.r), Lerp(mix, g, nxt.color.g), Lerp(mix, b, nxt.color.b)
-			else
-				k = k * sR
 			end
 			if k > 0 then
 				local w2 = math.min(step, bw - sx)
-				surface.SetDrawColor(0, 0, 0, darkA * k) -- soft dark backdrop so the text stays readable
-				surface.DrawTexturedRect(sx, top, w2, texH)
-				surface.SetDrawColor(r, g, b, colA * k) -- award color, gently pulsing
-				surface.DrawTexturedRect(sx, top, w2, texH)
+				for _, pc in ipairs(pieces) do
+					surface.SetDrawColor(0, 0, 0, darkA * k * pc.m) -- soft dark backdrop so the text stays readable
+					surface.DrawTexturedRectUV(sx, pc.y, w2, pc.h, 0, pc.v0, 1, 1)
+					surface.SetDrawColor(r, g, b, colA * k * pc.m) -- award color, gently pulsing
+					surface.DrawTexturedRectUV(sx, pc.y, w2, pc.h, 0, pc.v0, 1, 1)
+				end
 			end
 		end
 

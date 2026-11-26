@@ -514,6 +514,8 @@
 	local A_LINE = Color(255, 255, 255)
 	local A_INJURY = Color(215, 85, 75)
 	local gradientD = Material("vgui/gradient-d")
+	local INV_GRAD_R = surface.GetTextureID("vgui/gradient-r")
+	local INV_GRAD_L = surface.GetTextureID("vgui/gradient-l")
 
 	local function Accent() return hg.theme and hg.theme.c and hg.theme.c.accent or Color(55, 55, 55) end
 	local function PanelCol(a)
@@ -1033,8 +1035,15 @@
 		closeBtn.DoClick = function() frame:Close() end
 
 		frame.Paint = function(self, w, h)
+			-- the menus' base backdrop: darken, then the same soft side gradients as the main menu
 			surface.SetDrawColor(0, 0, 0, 105)
 			surface.DrawRect(0, 0, w, h)
+			surface.SetDrawColor(80, 80, 80, 15)
+			surface.SetTexture(INV_GRAD_R)
+			surface.DrawTexturedRect(0, 0, w, h)
+			surface.SetDrawColor(20, 20, 20, 80)
+			surface.SetTexture(INV_GRAD_L)
+			surface.DrawTexturedRect(0, 0, w, h)
 			AText("CHARACTER OVERVIEW", "ZCity_InvA_Title", marginX, P(46), A_TEXT, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 			AText("LMB  SELECT / DROP     RMB  DROP ALL     DRAG  ROTATE     ESC  CLOSE", "ZCity_InvA_Small", w * 0.5, h * 0.95, A_MUTED, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		end

@@ -1478,6 +1478,25 @@ function PANEL:CreateTopBar()
     bar.Band, bar.Medal = nil, nil
     bar.NextAwards = 0
 
+    -- credits, just under the top bar (top-left of the menu)
+    local credits = {
+        "Authors: uzelezz, Sadsalat,",
+        "Mr.Point, Zac90, Deka, Mannytko",
+        "Release 1.4.1",
+        "GitHub: github.com/uzelezz123/Z-City",
+    }
+    bar.PaintOver = function(this, w, h)
+        surface.SetFont("ZCity_MenuBar_Tiny")
+        local _, lh = surface.GetTextSize("A")
+        lh = lh + MenuUnit(2)
+        local pad = MenuUnit(14)
+        DisableClipping(true)
+        for i, line in ipairs(credits) do
+            draw.SimpleText(line, "ZCity_MenuBar_Tiny", pad, h + pad + (i - 1) * lh, menu_bar_text_dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+        end
+        DisableClipping(false)
+    end
+
     bar.Paint = function(this, w, h)
         surface.SetDrawColor(menu_bar_bg)
         surface.DrawRect(0, 0, w, h)
@@ -1561,6 +1580,7 @@ function PANEL:CreateBottomBar()
         surface.DrawRect(0, 0, w, h)
         surface.SetDrawColor(menu_bar_border.r, menu_bar_border.g, menu_bar_border.b, 50)
         surface.DrawRect(0, 0, w, 1)
+
     end
 
     local big, small = {}, {}
